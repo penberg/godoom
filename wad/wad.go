@@ -41,6 +41,7 @@ type Level struct {
 	Sidedefs []Sidedef
 	Vertexes []Vertex
 	Segs     []Seg
+	SSectors []SSector
 }
 
 type Thing struct {
@@ -248,6 +249,12 @@ func (w *WAD) ReadLevel(name string) (*Level, error) {
 				return nil, err
 			}
 			level.Segs = segs
+		case "SSECTORS":
+			ssectors, err := w.readSSectors(&lumpInfo)
+			if err != nil {
+				return nil, err
+			}
+			level.SSectors = ssectors
 		default:
 			fmt.Printf("Unhandled lump %s\n", name)
 		}
@@ -303,4 +310,14 @@ func (w *WAD) readSegs(lumpInfo *lumpInfo) ([]Seg, error) {
 		return nil, err
 	}
 	return segs, nil
+}
+
+func (w *WAD) readSSectors(lumpInfo *lumpInfo) ([]SSector, error) {
+	var ssector SSector
+	count := int(lumpInfo.Size) / int(unsafe.Sizeof(ssector))
+	ssectors := make([]SSector, count, count)
+	if err := binary.Read(w.file, binary.LittleEndian, ssectors); err != nil {
+		return nil, err
+	}
+	return ssectors, nil
 }
