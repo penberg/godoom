@@ -40,6 +40,7 @@ type Level struct {
 	Linedefs []Linedef
 	Sidedefs []Sidedef
 	Vertexes []Vertex
+	Segs     []Seg
 }
 
 type Thing struct {
@@ -241,6 +242,12 @@ func (w *WAD) ReadLevel(name string) (*Level, error) {
 				return nil, err
 			}
 			level.Vertexes = vertexes
+		case "SEGS":
+			segs, err := w.readSegs(&lumpInfo)
+			if err != nil {
+				return nil, err
+			}
+			level.Segs = segs
 		default:
 			fmt.Printf("Unhandled lump %s\n", name)
 		}
@@ -286,4 +293,14 @@ func (w *WAD) readVertexes(lumpInfo *lumpInfo) ([]Vertex, error) {
 		return nil, err
 	}
 	return vertexes, nil
+}
+
+func (w *WAD) readSegs(lumpInfo *lumpInfo) ([]Seg, error) {
+	var seg Seg
+	count := int(lumpInfo.Size) / int(unsafe.Sizeof(seg))
+	segs := make([]Seg, count, count)
+	if err := binary.Read(w.file, binary.LittleEndian, segs); err != nil {
+		return nil, err
+	}
+	return segs, nil
 }
