@@ -43,6 +43,7 @@ type Level struct {
 	Segs     []Seg
 	SSectors []SSector
 	Nodes    []Node
+	Sectors  []Sector
 }
 
 type Thing struct {
@@ -262,6 +263,12 @@ func (w *WAD) ReadLevel(name string) (*Level, error) {
 				return nil, err
 			}
 			level.Nodes = nodes
+		case "SECTORS":
+			sectors, err := w.readSectors(&lumpInfo)
+			if err != nil {
+				return nil, err
+			}
+			level.Sectors = sectors
 		default:
 			fmt.Printf("Unhandled lump %s\n", name)
 		}
@@ -337,4 +344,14 @@ func (w *WAD) readNodes(lumpInfo *lumpInfo) ([]Node, error) {
 		return nil, err
 	}
 	return nodes, nil
+}
+
+func (w *WAD) readSectors(lumpInfo *lumpInfo) ([]Sector, error) {
+	var sector Sector
+	count := int(lumpInfo.Size) / int(unsafe.Sizeof(sector))
+	sectors := make([]Sector, count, count)
+	if err := binary.Read(w.file, binary.LittleEndian, sectors); err != nil {
+		return nil, err
+	}
+	return sectors, nil
 }
