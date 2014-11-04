@@ -7,6 +7,47 @@ import (
 	"os"
 )
 
+const (
+	subsectorBit = int(0x8000)
+)
+
+type Point struct {
+	X int16
+	Y int16
+}
+
+func renderSubsector(level *wad.Level, idx int) {
+	fmt.Println(level.SSectors[idx])
+}
+
+func pointOnSide(point *Point, node *wad.Node) int {
+	// Sign of the determinant (equivalent to a cross product):
+	if (node.DX>>16*(point.Y-node.Y) - node.DY>>16*(point.X-node.X)) < 0 {
+		// Point is on front side:
+		return 0
+	}
+	// Point is on the back side:
+	return 1
+}
+
+func traverseBsp(level *wad.Level, point *Point, idx int) {
+	if idx&subsectorBit == subsectorBit {
+		if idx == -1 {
+			renderSubsector(level, 0)
+		} else {
+			renderSubsector(level, int(uint16(idx) & ^uint16(subsectorBit)))
+		}
+		return
+	}
+	node := level.Nodes[idx]
+
+	side := pointOnSide(point, &node)
+
+	traverseBsp(level, point, int(node.Child[side]))
+
+	// TODO: Traverse back space if inside node's bounding box.
+}
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "godoom"
@@ -52,11 +93,17 @@ func main() {
 		}
 		levelName := levelNames[levelIdx]
 		fmt.Printf("Loading level %s ...\n", levelName)
-		_, err = wad.ReadLevel(levelName)
+		level, err := wad.ReadLevel(levelName)
 		if err != nil {
 			fmt.Printf("error: %s\n", err)
 			os.Exit(1)
 		}
+		player1 := level.Things[1]
+		position := &Point{
+			X: player1.XPosition,
+			Y: player1.YPosition,
+		}
+		traverseBsp(level, position, len(level.Nodes)-1)
 	}
 	app.Run(os.Args)
 }
