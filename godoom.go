@@ -21,8 +21,10 @@ func renderSubsector(level *wad.Level, idx int) {
 }
 
 func pointOnSide(point *Point, node *wad.Node) int {
-	// Sign of the determinant (equivalent to a cross product):
-	if (node.DX>>16*(point.Y-node.Y) - node.DY>>16*(point.X-node.X)) < 0 {
+	dx := point.X-node.X
+	dy := point.Y-node.Y
+	// Perp dot product:
+	if dy*node.DX>>16 - node.DY>>16*dx < 0 {
 		// Point is on front side:
 		return 0
 	}
