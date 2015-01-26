@@ -1,16 +1,16 @@
 package main
 
 import (
-	"github.com/codegangsta/cli"
-	"os"
 	"fmt"
+	"github.com/codegangsta/cli"
 	"github.com/go-gl/gl"
 	glfw "github.com/go-gl/glfw3"
+	"os"
 	"runtime"
 )
 
 const (
-        vertex = `#version 330
+	vertex = `#version 330
 
 in vec2 position;
 
@@ -19,7 +19,7 @@ void main()
     gl_Position = vec4(position, 0.0, 1.0);
 }`
 
-        fragment = `#version 330
+	fragment = `#version 330
 
 out vec4 outColor;
 
@@ -43,10 +43,10 @@ func renderSubsector(level *Level, idx int) {
 }
 
 func pointOnSide(point *Point, node *Node) int {
-	dx := point.X-node.X
-	dy := point.Y-node.Y
+	dx := point.X - node.X
+	dy := point.Y - node.Y
 	// Perp dot product:
-	if dy*node.DX>>16 - node.DY>>16*dx < 0 {
+	if dy*node.DX>>16-node.DY>>16*dx < 0 {
 		// Point is on front side:
 		return 0
 	}
