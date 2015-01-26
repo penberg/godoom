@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/go-gl/gl"
 	glfw "github.com/go-gl/glfw3"
-	"github.com/go-gl/glu"
 	"runtime"
 )
 
@@ -214,12 +213,5 @@ func game() {
 		if window.GetKey(glfw.KeyEscape) == glfw.Press {
 			window.SetShouldClose(true)
 		}
-	}
-}
-
-func checkGLerror() {
-	if glerr := gl.GetError(); glerr != gl.NO_ERROR {
-		string, _ := glu.ErrorString(glerr)
-		panic(string)
 	}
 }
