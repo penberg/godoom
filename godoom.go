@@ -147,12 +147,22 @@ func game() {
 	}
 	defer glfw.Terminate()
 
+	monitor, err := glfw.GetPrimaryMonitor()
+	if err != nil {
+		panic(err)
+	}
+
+	videoMode, err := monitor.GetVideoMode()
+	if err != nil {
+		panic(err)
+	}
+
 	glfw.WindowHint(glfw.ContextVersionMajor, 3)
 	glfw.WindowHint(glfw.ContextVersionMinor, 3)
 	glfw.WindowHint(glfw.OpenglForwardCompatible, glfw.True)
 	glfw.WindowHint(glfw.OpenglProfile, glfw.OpenglCoreProfile)
 
-	window, err := glfw.CreateWindow(800, 600, "Example", nil, nil)
+	window, err := glfw.CreateWindow(videoMode.Width, videoMode.Height, "GoDoom", monitor, nil)
 	if err != nil {
 		panic(err)
 	}
