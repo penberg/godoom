@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/codegangsta/cli"
-	"github.com/penberg/godoom/wad"
 	"os"
 	"fmt"
 	"github.com/go-gl/gl"
@@ -39,11 +38,11 @@ type Point struct {
 	Y int16
 }
 
-func renderSubsector(level *wad.Level, idx int) {
+func renderSubsector(level *Level, idx int) {
 	fmt.Println(level.SSectors[idx])
 }
 
-func pointOnSide(point *Point, node *wad.Node) int {
+func pointOnSide(point *Point, node *Node) int {
 	dx := point.X-node.X
 	dy := point.Y-node.Y
 	// Perp dot product:
@@ -55,7 +54,7 @@ func pointOnSide(point *Point, node *wad.Node) int {
 	return 1
 }
 
-func traverseBsp(level *wad.Level, point *Point, idx int) {
+func traverseBsp(level *Level, point *Point, idx int) {
 	if idx&subsectorBit == subsectorBit {
 		if idx == -1 {
 			renderSubsector(level, 0)
@@ -94,7 +93,7 @@ func main() {
 		levelNumber := c.Int("level")
 		levelIdx := levelNumber - 1
 		fmt.Printf("Loading WAD archive '%s' ...\n", file)
-		wad, err := wad.ReadWAD(file)
+		wad, err := ReadWAD(file)
 		if err != nil {
 			fmt.Printf("error: %s\n", err)
 			os.Exit(1)

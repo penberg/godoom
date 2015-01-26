@@ -1,7 +1,7 @@
 // Package wad provides access to Doom's data archives also known as WAD files.
 // The file format is documented in The Unofficial DOOM Specs:
 // http://www.gamers.org/dhs/helpdocs/dmsp1666.html
-package wad
+package main
 
 import (
 	"encoding/binary"
