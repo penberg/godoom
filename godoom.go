@@ -135,10 +135,18 @@ func main() {
 	app.Run(os.Args)
 }
 
+func errorCallback(err glfw.ErrorCode, desc string) {
+	fmt.Printf("%v: %v\n", err, desc)
+}
+
 func game() {
 	runtime.LockOSThread()
 
-	glfw.Init()
+	glfw.SetErrorCallback(errorCallback)
+
+	if !glfw.Init() {
+		panic("Can't init glfw!")
+	}
 	defer glfw.Terminate()
 
 	glfw.WindowHint(glfw.ContextVersionMajor, 3)
