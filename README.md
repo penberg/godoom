@@ -1,10 +1,26 @@
 # GoDoom
 
-GoDoom is a Doom clone written in Go.
+GoDoom is a Doom clone written from scratch in Go.
 
 ## Installation
 
-Installation is as simple as:
+Prerequisites:
+
+* Go
+* [GLFW3](https://github.com/go-gl/glfw3)
+* OpenGL 3.3 capable GPU
+
+OS X:
+
+``` sh
+brew tap homebrew/versions
+brew install --build-bottle --static glfw3
+go get github.com/go-gl/glfw3
+brew install glew
+go get github.com/go-gl/gl
+```
+
+Installation:
 
 ``` sh
 go get github.com/penberg/godoom
