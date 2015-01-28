@@ -167,22 +167,12 @@ func game(level *Level, position *Point) {
 	}
 	defer glfw.Terminate()
 
-	monitor, err := glfw.GetPrimaryMonitor()
-	if err != nil {
-		panic(err)
-	}
-
-	videoMode, err := monitor.GetVideoMode()
-	if err != nil {
-		panic(err)
-	}
-
 	glfw.WindowHint(glfw.ContextVersionMajor, 3)
 	glfw.WindowHint(glfw.ContextVersionMinor, 3)
 	glfw.WindowHint(glfw.OpenglForwardCompatible, glfw.True)
 	glfw.WindowHint(glfw.OpenglProfile, glfw.OpenglCoreProfile)
 
-	window, err := glfw.CreateWindow(videoMode.Width, videoMode.Height, "GoDoom", monitor, nil)
+	window, err := glfw.CreateWindow(640, 480, "GoDoom", nil, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -204,7 +194,7 @@ func game(level *Level, position *Point) {
 
 	vbo_data := []float32{}
 	for _, vertex := range vertices {
-		vbo_data = append(vbo_data, float32(vertex.XCoord)/32767.0*5.0, float32(vertex.YCoord)/32767.0*5.0, 0.0)
+		vbo_data = append(vbo_data, float32(vertex.XCoord)/32767.0*10.0, float32(vertex.YCoord)/32767.0*10.0, 0.0)
 	}
 
 	gl.BufferData(gl.ARRAY_BUFFER, len(vbo_data)*4, vbo_data, gl.STATIC_DRAW)
