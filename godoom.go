@@ -38,8 +38,24 @@ type Point struct {
 	Y int16
 }
 
-func renderSubsector(level *Level, idx int) {
-	fmt.Println(level.SSectors[idx])
+func renderSubsector(level *Level, idx int, vertices []Vertex) []Vertex {
+	ssector := level.SSectors[idx]
+	for seg := ssector.StartSeg; seg < ssector.StartSeg+ssector.Numsegs; seg++ {
+		vertices = append(vertices, renderSeg(level, int(seg), vertices)...)
+	}
+	return vertices
+}
+
+func renderSeg(level *Level, idx int, vertices []Vertex) []Vertex {
+	seg := level.Segs[idx]
+	return renderLinedef(level, int(seg.LineNum), vertices)
+}
+
+func renderLinedef(level *Level, idx int, vertices []Vertex) []Vertex {
+	linedef := level.Linedefs[idx]
+	vertices = append(vertices, level.Vertexes[linedef.VertexStart])
+	vertices = append(vertices, level.Vertexes[linedef.VertexEnd])
+	return vertices
 }
 
 func pointOnSide(point *Point, node *Node) int {
@@ -54,22 +70,27 @@ func pointOnSide(point *Point, node *Node) int {
 	return 1
 }
 
-func traverseBsp(level *Level, point *Point, idx int) {
+func traverseBsp(level *Level, point *Point, idx int, visibility bool, vertices []Vertex) []Vertex {
 	if idx&subsectorBit == subsectorBit {
 		if idx == -1 {
-			renderSubsector(level, 0)
+			return renderSubsector(level, 0, vertices)
 		} else {
-			renderSubsector(level, int(uint16(idx) & ^uint16(subsectorBit)))
+			return renderSubsector(level, int(uint16(idx) & ^uint16(subsectorBit)), vertices)
 		}
-		return
 	}
 	node := level.Nodes[idx]
 
-	side := pointOnSide(point, &node)
-
-	traverseBsp(level, point, int(node.Child[side]))
-
-	// TODO: Traverse back space if inside node's bounding box.
+	if visibility {
+		// TODO: Traverse back space if inside node's bounding box.
+		side := pointOnSide(point, &node)
+		return traverseBsp(level, point, int(node.Child[side]), visibility, vertices)
+	} else {
+		left := traverseBsp(level, point, int(node.Child[0]), visibility, []Vertex{})
+		right := traverseBsp(level, point, int(node.Child[1]), visibility, []Vertex{})
+		vertices = append(vertices, left...)
+		vertices = append(vertices, right...)
+		return vertices
+	}
 }
 
 func main() {
@@ -127,8 +148,7 @@ func main() {
 			X: player1.XPosition,
 			Y: player1.YPosition,
 		}
-		traverseBsp(level, position, len(level.Nodes)-1)
-		game()
+		game(level, position)
 	}
 	app.Run(os.Args)
 }
@@ -137,7 +157,7 @@ func errorCallback(err glfw.ErrorCode, desc string) {
 	fmt.Printf("%v: %v\n", err, desc)
 }
 
-func game() {
+func game(level *Level, position *Point) {
 	runtime.LockOSThread()
 
 	glfw.SetErrorCallback(errorCallback)
@@ -180,9 +200,14 @@ func game() {
 	vbo := gl.GenBuffer()
 	vbo.Bind(gl.ARRAY_BUFFER)
 
-	verticies := []float32{0, 1, 0, -1, -1, 0, 1, -1, 0}
+	vertices := traverseBsp(level, position, len(level.Nodes)-1, false, []Vertex{})
 
-	gl.BufferData(gl.ARRAY_BUFFER, len(verticies)*4, verticies, gl.STATIC_DRAW)
+	vbo_data := []float32{}
+	for _, vertex := range vertices {
+		vbo_data = append(vbo_data, float32(vertex.XCoord)/32767.0*5.0, float32(vertex.YCoord)/32767.0*5.0, 0.0)
+	}
+
+	gl.BufferData(gl.ARRAY_BUFFER, len(vbo_data)*4, vbo_data, gl.STATIC_DRAW)
 
 	vertex_shader := gl.CreateShader(gl.VERTEX_SHADER)
 	vertex_shader.Source(vertex)
@@ -214,7 +239,7 @@ func game() {
 
 	for !window.ShouldClose() {
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-		gl.DrawArrays(gl.TRIANGLES, 0, 3)
+		gl.DrawArrays(gl.LINES, 0, len(vbo_data))
 
 		window.SwapBuffers()
 		glfw.PollEvents()
