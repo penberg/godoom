@@ -17,10 +17,14 @@ type String8 [8]byte
 // graphics, sounds, and level data. The data is organized as named
 // lumps.
 type WAD struct {
-	header    *header
-	file      *os.File
-	levels    map[string]int
-	lumpInfos []lumpInfo
+	header       *header
+	file         *os.File
+	pnamesLump   int
+	pnames       []String8
+	textureLumps []int
+	textures     map[string]Texture
+	levels       map[string]int
+	lumpInfos    []lumpInfo
 }
 
 type header struct {
@@ -33,6 +37,28 @@ type lumpInfo struct {
 	Filepos int32
 	Size    int32
 	Name    String8
+}
+
+type Texture struct {
+	Header  *TextureHeader
+	Patches []Patch
+}
+
+type TextureHeader struct {
+	TexName         String8
+	Masked          int32
+	Width           int16
+	Height          int16
+	ColumnDirectory int32
+	NumPatches      int16
+}
+
+type Patch struct {
+	XOffset     int16
+	YOffset     int16
+	PNameNumber int16
+	Stepdir     int16
+	ColorMap    int16
 }
 
 type Level struct {
@@ -155,6 +181,12 @@ func ReadWAD(filename string) (*WAD, error) {
 	if err := wad.readInfoTables(); err != nil {
 		return nil, err
 	}
+	if err := wad.readPatchNames(); err != nil {
+		return nil, err
+	}
+	if err := wad.readTextureLumps(); err != nil {
+		return nil, err
+	}
 	return wad, nil
 }
 
@@ -170,12 +202,21 @@ func (w *WAD) readInfoTables() error {
 	if err := w.seek(int64(w.header.InfoTableOfs)); err != nil {
 		return err
 	}
+	pnamesLump := -1
+	textureLumps := make([]int, 0, 2)
+	textures := map[string]Texture{}
 	levels := map[string]int{}
 	lumpInfos := make([]lumpInfo, w.header.NumLumps, w.header.NumLumps)
 	for i := int32(0); i < w.header.NumLumps; i++ {
 		var lumpInfo lumpInfo
 		if err := binary.Read(w.file, binary.LittleEndian, &lumpInfo); err != nil {
 			return err
+		}
+		if ToString(lumpInfo.Name) == "PNAMES" {
+			pnamesLump = int(i)
+		}
+		if ToString(lumpInfo.Name) == "TEXTURE1" || ToString(lumpInfo.Name) == "TEXTURE2" {
+			textureLumps = append(textureLumps, int(i))
 		}
 		if ToString(lumpInfo.Name) == "THINGS" {
 			levelIdx := int(i - 1)
@@ -184,8 +225,64 @@ func (w *WAD) readInfoTables() error {
 		}
 		lumpInfos[i] = lumpInfo
 	}
+	w.pnamesLump = pnamesLump
+	w.textureLumps = textureLumps
+	w.textures = textures
 	w.levels = levels
 	w.lumpInfos = lumpInfos
+	return nil
+}
+
+func (w *WAD) readPatchNames() error {
+	lumpInfo := w.lumpInfos[w.pnamesLump]
+	if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
+		return err
+	}
+	var count uint32
+	if err := binary.Read(w.file, binary.LittleEndian, &count); err != nil {
+		return err
+	}
+	fmt.Printf("Loading %d patches ...\n", count)
+	pnames := make([]String8, count, count)
+	if err := binary.Read(w.file, binary.LittleEndian, pnames); err != nil {
+		return err
+	}
+	w.pnames = pnames
+	return nil
+}
+
+func (w *WAD) readTextureLumps() error {
+	for _, i := range w.textureLumps {
+		lumpInfo := w.lumpInfos[i]
+		if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
+			return err
+		}
+		var count uint32
+		if err := binary.Read(w.file, binary.LittleEndian, &count); err != nil {
+			return err
+		}
+		fmt.Printf("Loading %d textures ...\n", count)
+		offsets := make([]int32, count, count)
+		if err := binary.Read(w.file, binary.LittleEndian, offsets); err != nil {
+			return err
+		}
+		for _, offset := range offsets {
+			if err := w.seek(int64(lumpInfo.Filepos + offset)); err != nil {
+				return err
+			}
+			var header TextureHeader
+			if err := binary.Read(w.file, binary.LittleEndian, &header); err != nil {
+				return err
+			}
+			name := ToString(header.TexName)
+			patches := make([]Patch, header.NumPatches, header.NumPatches)
+			if err := binary.Read(w.file, binary.LittleEndian, patches); err != nil {
+				return err
+			}
+			texture := Texture{Header: &header, Patches: patches}
+			w.textures[name] = texture
+		}
+	}
 	return nil
 }
 
