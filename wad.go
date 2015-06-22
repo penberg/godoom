@@ -20,7 +20,9 @@ type WAD struct {
 	header       *header
 	file         *os.File
 	pnamesLump   int
+	playpalLump  int
 	pnames       []String8
+	playpal      Playpal
 	textureLumps []int
 	textures     map[string]Texture
 	levels       map[string]int
@@ -150,6 +152,20 @@ type Reject struct {
 type Blockmap struct {
 }
 
+type RGB struct {
+	Red   uint8
+	Green uint8
+	Blue  uint8
+}
+
+type Palette struct {
+	Table [256]RGB
+}
+
+type Playpal struct {
+	Palettes [14]Palette
+}
+
 func ToString(s String8) string {
 	var i int
 	for i = 0; i < len(s); i++ {
@@ -181,6 +197,9 @@ func ReadWAD(filename string) (*WAD, error) {
 	if err := wad.readInfoTables(); err != nil {
 		return nil, err
 	}
+	if err := wad.readPlaypal(); err != nil {
+		return nil, err
+	}
 	if err := wad.readPatchNames(); err != nil {
 		return nil, err
 	}
@@ -203,6 +222,7 @@ func (w *WAD) readInfoTables() error {
 		return err
 	}
 	pnamesLump := -1
+	playpalLump := -1
 	textureLumps := make([]int, 0, 2)
 	textures := map[string]Texture{}
 	levels := map[string]int{}
@@ -215,6 +235,9 @@ func (w *WAD) readInfoTables() error {
 		if ToString(lumpInfo.Name) == "PNAMES" {
 			pnamesLump = int(i)
 		}
+		if ToString(lumpInfo.Name) == "PLAYPAL" {
+			playpalLump = int(i)
+		}
 		if ToString(lumpInfo.Name) == "TEXTURE1" || ToString(lumpInfo.Name) == "TEXTURE2" {
 			textureLumps = append(textureLumps, int(i))
 		}
@@ -226,10 +249,25 @@ func (w *WAD) readInfoTables() error {
 		lumpInfos[i] = lumpInfo
 	}
 	w.pnamesLump = pnamesLump
+	w.playpalLump = playpalLump
 	w.textureLumps = textureLumps
 	w.textures = textures
 	w.levels = levels
 	w.lumpInfos = lumpInfos
+	return nil
+}
+
+func (w *WAD) readPlaypal() error {
+	lumpInfo := w.lumpInfos[w.playpalLump]
+	if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
+		return err
+	}
+	fmt.Printf("Loading palette ...\n")
+	playpal := Playpal{}
+	if err := binary.Read(w.file, binary.LittleEndian, &playpal); err != nil {
+		return err
+	}
+	w.playpal = playpal
 	return nil
 }
 
