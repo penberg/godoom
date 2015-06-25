@@ -22,7 +22,7 @@ type WAD struct {
 	pnamesLump   int
 	playpalLump  int
 	pnames       []String8
-	playpal      Playpal
+	playpal      *Playpal
 	textureLumps []int
 	textures     map[string]Texture
 	levels       map[string]int
@@ -197,15 +197,21 @@ func ReadWAD(filename string) (*WAD, error) {
 	if err := wad.readInfoTables(); err != nil {
 		return nil, err
 	}
-	if err := wad.readPlaypal(); err != nil {
+	playpal, err := wad.readPlaypal()
+	if err != nil {
 		return nil, err
 	}
-	if err := wad.readPatchNames(); err != nil {
+	wad.playpal = playpal
+	pnames, err := wad.readPatchNames()
+	if err != nil {
 		return nil, err
 	}
-	if err := wad.readTextureLumps(); err != nil {
+	wad.pnames = pnames
+	textures, err := wad.readTextureLumps()
+	if err != nil {
 		return nil, err
 	}
+	wad.textures = textures
 	return wad, nil
 }
 
@@ -224,7 +230,6 @@ func (w *WAD) readInfoTables() error {
 	pnamesLump := -1
 	playpalLump := -1
 	textureLumps := make([]int, 0, 2)
-	textures := map[string]Texture{}
 	levels := map[string]int{}
 	lumpInfos := make([]lumpInfo, w.header.NumLumps, w.header.NumLumps)
 	for i := int32(0); i < w.header.NumLumps; i++ {
@@ -251,77 +256,75 @@ func (w *WAD) readInfoTables() error {
 	w.pnamesLump = pnamesLump
 	w.playpalLump = playpalLump
 	w.textureLumps = textureLumps
-	w.textures = textures
 	w.levels = levels
 	w.lumpInfos = lumpInfos
 	return nil
 }
 
-func (w *WAD) readPlaypal() error {
+func (w *WAD) readPlaypal() (*Playpal, error) {
 	lumpInfo := w.lumpInfos[w.playpalLump]
 	if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Printf("Loading palette ...\n")
 	playpal := Playpal{}
 	if err := binary.Read(w.file, binary.LittleEndian, &playpal); err != nil {
-		return err
+		return nil, err
 	}
-	w.playpal = playpal
-	return nil
+	return &playpal, nil
 }
 
-func (w *WAD) readPatchNames() error {
+func (w *WAD) readPatchNames() ([]String8, error) {
 	lumpInfo := w.lumpInfos[w.pnamesLump]
 	if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
-		return err
+		return nil, err
 	}
 	var count uint32
 	if err := binary.Read(w.file, binary.LittleEndian, &count); err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Printf("Loading %d patches ...\n", count)
 	pnames := make([]String8, count, count)
 	if err := binary.Read(w.file, binary.LittleEndian, pnames); err != nil {
-		return err
+		return nil, err
 	}
-	w.pnames = pnames
-	return nil
+	return pnames, nil
 }
 
-func (w *WAD) readTextureLumps() error {
+func (w *WAD) readTextureLumps() (map[string]Texture, error) {
+	textures := make(map[string]Texture)
 	for _, i := range w.textureLumps {
 		lumpInfo := w.lumpInfos[i]
 		if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
-			return err
+			return nil, err
 		}
 		var count uint32
 		if err := binary.Read(w.file, binary.LittleEndian, &count); err != nil {
-			return err
+			return nil, err
 		}
 		fmt.Printf("Loading %d textures ...\n", count)
 		offsets := make([]int32, count, count)
 		if err := binary.Read(w.file, binary.LittleEndian, offsets); err != nil {
-			return err
+			return nil, err
 		}
 		for _, offset := range offsets {
 			if err := w.seek(int64(lumpInfo.Filepos + offset)); err != nil {
-				return err
+				return nil, err
 			}
 			var header TextureHeader
 			if err := binary.Read(w.file, binary.LittleEndian, &header); err != nil {
-				return err
+				return nil, err
 			}
 			name := ToString(header.TexName)
 			patches := make([]Patch, header.NumPatches, header.NumPatches)
 			if err := binary.Read(w.file, binary.LittleEndian, patches); err != nil {
-				return err
+				return nil, err
 			}
 			texture := Texture{Header: &header, Patches: patches}
-			w.textures[name] = texture
+			textures[name] = texture
 		}
 	}
-	return nil
+	return textures, nil
 }
 
 func (w *WAD) seek(offset int64) error {
