@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"github.com/codegangsta/cli"
-	"github.com/go-gl/gl"
-	glfw "github.com/go-gl/glfw3"
+	"github.com/go-gl/gl/v3.3-core/gl"
+	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/go-gl/mathgl/mgl32"
+	"log"
 	"os"
 	"runtime"
+	"strings"
 )
 
 const (
@@ -20,7 +22,7 @@ uniform mat4 MVP;
 void main()
 {
     gl_Position = MVP * vec4(vertex, 1.0);
-}`
+}` + "\x00"
 
 	fragment = `#version 330
 
@@ -29,7 +31,7 @@ out vec4 outColor;
 void main()
 {
     outColor = vec4(1.0, 1.0, 1.0, 1.0);
-}`
+}` + "\x00"
 )
 
 const (
@@ -244,24 +246,19 @@ func main() {
 	app.Run(os.Args)
 }
 
-func errorCallback(err glfw.ErrorCode, desc string) {
-	fmt.Printf("%v: %v\n", err, desc)
-}
-
 func game(level *Level, position *Point) {
 	runtime.LockOSThread()
 
-	glfw.SetErrorCallback(errorCallback)
-
-	if !glfw.Init() {
-		panic("Can't init glfw!")
+	if err := glfw.Init(); err != nil {
+		log.Fatalln("failed to initialize glfw:", err)
 	}
 	defer glfw.Terminate()
 
+	glfw.WindowHint(glfw.Resizable, glfw.False)
 	glfw.WindowHint(glfw.ContextVersionMajor, 3)
 	glfw.WindowHint(glfw.ContextVersionMinor, 3)
-	glfw.WindowHint(glfw.OpenglForwardCompatible, glfw.True)
-	glfw.WindowHint(glfw.OpenglProfile, glfw.OpenglCoreProfile)
+	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
+	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
 
 	window, err := glfw.CreateWindow(640, 480, "GoDoom", nil, nil)
 	if err != nil {
@@ -277,11 +274,13 @@ func game(level *Level, position *Point) {
 
 	gl.Init()
 
-	vao := gl.GenVertexArray()
-	vao.Bind()
+	var vao uint32
+	gl.GenVertexArrays(1, &vao)
+	gl.BindVertexArray(vao)
 
-	vbo := gl.GenBuffer()
-	vbo.Bind(gl.ARRAY_BUFFER)
+	var vbo uint32
+	gl.GenBuffers(1, &vbo)
+	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
 
 	speed := float32(5.0)
 
@@ -293,51 +292,50 @@ func game(level *Level, position *Point) {
 	for _, vertex := range vertices {
 		vbo_data = append(vbo_data, float32(vertex.X), float32(vertex.Y), float32(vertex.Z))
 	}
-	gl.BufferData(gl.ARRAY_BUFFER, len(vbo_data)*4, vbo_data, gl.STATIC_DRAW)
+	gl.BufferData(gl.ARRAY_BUFFER, len(vbo_data)*4, gl.Ptr(vbo_data), gl.STATIC_DRAW)
 
-	vertex_shader := gl.CreateShader(gl.VERTEX_SHADER)
-	vertex_shader.Source(vertex)
-	vertex_shader.Compile()
-	fmt.Println(vertex_shader.GetInfoLog())
-	defer vertex_shader.Delete()
+	vertex_shader, err := compileShader(vertex, gl.VERTEX_SHADER)
+	if err != nil {
+		panic(err)
+	}
 
-	fragment_shader := gl.CreateShader(gl.FRAGMENT_SHADER)
-	fragment_shader.Source(fragment)
-	fragment_shader.Compile()
-	fmt.Println(fragment_shader.GetInfoLog())
-	defer fragment_shader.Delete()
+	fragment_shader, err := compileShader(fragment, gl.FRAGMENT_SHADER)
+	if err != nil {
+		panic(err)
+	}
 
 	program := gl.CreateProgram()
-	program.AttachShader(vertex_shader)
-	program.AttachShader(fragment_shader)
+	gl.AttachShader(program, vertex_shader)
+	gl.AttachShader(program, fragment_shader)
 
-	program.BindFragDataLocation(0, "outColor")
-	program.Link()
-	defer program.Delete()
+	gl.DeleteShader(vertex_shader)
+	gl.DeleteShader(fragment_shader)
 
-	vertexAttrib := program.GetAttribLocation("vertex")
-	defer vertexAttrib.DisableArray()
+	gl.BindFragDataLocation(program, 0, gl.Str("outColor\x00"))
+	gl.LinkProgram(program)
 
-	matrixID := program.GetUniformLocation("MVP")
+	vertexAttrib := uint32(gl.GetAttribLocation(program, gl.Str("vertex\x00")))
+
+	matrixID := gl.GetUniformLocation(program, gl.Str("MVP\x00"))
 
 	gl.ClearColor(0.3, 0.3, 0.3, 1.0)
 
 	for !window.ShouldClose() {
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-		program.Use()
+		gl.UseProgram(program)
 
-		vertexAttrib.AttribPointer(3, gl.FLOAT, false, 0, nil)
-		vertexAttrib.EnableArray()
+		gl.VertexAttribPointer(vertexAttrib, 3, gl.FLOAT, false, 0, nil)
+		gl.EnableVertexAttribArray(vertexAttrib)
 
 		projection := mgl32.Perspective(64.0, float32(width)/float32(height), 1.0, 10000.0)
 		view := mgl32.LookAt(eye.X(), eye.Y(), eye.Z(), eye.X()+direction.X(), eye.Y()+direction.Y(), eye.Z()+direction.Z(), 0.0, 1.0, 0.0)
 		model := mgl32.Ident4()
 		mvp := projection.Mul4(view).Mul4(model)
 
-		matrixID.UniformMatrix4fv(false, mvp)
+		gl.UniformMatrix4fv(matrixID, 1, false, &mvp[0])
 
-		gl.DrawArrays(gl.LINES, 0, len(vbo_data))
+		gl.DrawArrays(gl.LINES, 0, int32(len(vbo_data)))
 
 		window.SwapBuffers()
 		glfw.PollEvents()
@@ -358,4 +356,26 @@ func game(level *Level, position *Point) {
 			direction = mgl32.QuatRotate(-0.1, mgl32.Vec3{0.0, 1.0, 0.0}).Rotate(direction)
 		}
 	}
+}
+
+func compileShader(source string, shaderType uint32) (uint32, error) {
+	shader := gl.CreateShader(shaderType)
+
+	csource := gl.Str(source)
+	gl.ShaderSource(shader, 1, &csource, nil)
+	gl.CompileShader(shader)
+
+	var status int32
+	gl.GetShaderiv(shader, gl.COMPILE_STATUS, &status)
+	if status == gl.FALSE {
+		var logLength int32
+		gl.GetShaderiv(shader, gl.INFO_LOG_LENGTH, &logLength)
+
+		log := strings.Repeat("\x00", int(logLength+1))
+		gl.GetShaderInfoLog(shader, logLength, nil, gl.Str(log))
+
+		return 0, fmt.Errorf("failed to compile %v: %v", source, log)
+	}
+
+	return shader, nil
 }
