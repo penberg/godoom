@@ -6,6 +6,10 @@ import (
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/go-gl/mathgl/mgl32"
+	"image"
+	_ "image/gif"
+
+	"image/draw"
 	"log"
 	"os"
 	"runtime"
@@ -16,21 +20,29 @@ const (
 	vertex = `#version 330
 
 in vec3 vertex;
+in vec2 vertTexCoord;
 
 uniform mat4 MVP;
 
+out vec2 fragTexCoord;
+
 void main()
 {
+    fragTexCoord = vertTexCoord;
     gl_Position = MVP * vec4(vertex, 1.0);
 }` + "\x00"
 
 	fragment = `#version 330
 
+uniform sampler2D tex;
+
+in vec2 fragTexCoord;
+
 out vec4 outColor;
 
 void main()
 {
-    outColor = vec4(1.0, 1.0, 1.0, 1.0);
+    outColor = texture(tex, fragTexCoord);
 }` + "\x00"
 )
 
@@ -42,6 +54,8 @@ type Point3 struct {
 	X int16
 	Y int16
 	Z int16
+	U float32
+	V float32
 }
 
 type Point struct {
@@ -105,35 +119,35 @@ func renderLinedef(level *Level, seg *Seg, idx int, vertices []Point3) []Point3 
 	if upperTexture != "-" && oppositeSidedef != nil {
 		oppositeSector := level.Sectors[oppositeSidedef.SectorRef]
 
-		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord})
-		vertices = append(vertices, Point3{X: -start.XCoord, Y: oppositeSector.CeilingHeight, Z: start.YCoord})
-		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.CeilingHeight, Z: end.YCoord})
+		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 1.0})
+		vertices = append(vertices, Point3{X: -start.XCoord, Y: oppositeSector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 0.0})
+		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 0.0})
 
-		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.CeilingHeight, Z: end.YCoord})
-		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord})
-		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord})
+		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 0.0})
+		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 1.0})
+		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 	}
 
 	if middleTexture != "-" {
-		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord})
-		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord})
-		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord})
+		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
+		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 0.0})
+		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 0.0})
 
-		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord})
-		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord})
-		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord})
+		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 0.0})
+		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord, U: 1.0, V: 1.0})
+		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 	}
 
 	if lowerTexture != "-" && oppositeSidedef != nil {
 		oppositeSector := level.Sectors[oppositeSidedef.SectorRef]
 
-		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord})
-		vertices = append(vertices, Point3{X: -start.XCoord, Y: oppositeSector.FloorHeight, Z: start.YCoord})
-		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.FloorHeight, Z: end.YCoord})
+		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
+		vertices = append(vertices, Point3{X: -start.XCoord, Y: oppositeSector.FloorHeight, Z: start.YCoord, U: 0.0, V: 0.0})
+		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.FloorHeight, Z: end.YCoord, U: 1.0, V: 0.0})
 
-		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.FloorHeight, Z: end.YCoord})
-		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord})
-		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord})
+		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.FloorHeight, Z: end.YCoord, U: 1.0, V: 0.0})
+		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord, U: 1.0, V: 1.0})
+		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 	}
 
 	return vertices
@@ -270,6 +284,11 @@ func game(level *Level, position *Point) {
 	gl.GenBuffers(1, &vbo)
 	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
 
+	texture, err := loadTexture("wall02_2.gif")
+	if err != nil {
+		panic(err)
+	}
+
 	speed := float32(5.0)
 
 	eye := mgl32.Vec3{float32(-position.X), 0.0, float32(position.Y)}
@@ -278,7 +297,7 @@ func game(level *Level, position *Point) {
 	vertices := traverseBsp(level, position, len(level.Nodes)-1, false, []Point3{})
 	vbo_data := []float32{}
 	for _, vertex := range vertices {
-		vbo_data = append(vbo_data, float32(vertex.X), float32(vertex.Y), float32(vertex.Z))
+		vbo_data = append(vbo_data, float32(vertex.X), float32(vertex.Y), float32(vertex.Z), vertex.U, vertex.V)
 	}
 	gl.BufferData(gl.ARRAY_BUFFER, len(vbo_data)*4, gl.Ptr(vbo_data), gl.STATIC_DRAW)
 
@@ -304,6 +323,8 @@ func game(level *Level, position *Point) {
 
 	vertexAttrib := uint32(gl.GetAttribLocation(program, gl.Str("vertex\x00")))
 
+	texCoordAttrib := uint32(gl.GetAttribLocation(program, gl.Str("vertTexCoord\x00")))
+
 	matrixID := gl.GetUniformLocation(program, gl.Str("MVP\x00"))
 
 	gl.Enable(gl.DEPTH_TEST)
@@ -315,8 +336,11 @@ func game(level *Level, position *Point) {
 
 		gl.UseProgram(program)
 
-		gl.VertexAttribPointer(vertexAttrib, 3, gl.FLOAT, false, 0, nil)
+		gl.VertexAttribPointer(vertexAttrib, 3, gl.FLOAT, false, 5*4, gl.PtrOffset(0))
 		gl.EnableVertexAttribArray(vertexAttrib)
+
+		gl.VertexAttribPointer(texCoordAttrib, 2, gl.FLOAT, false, 5*4, gl.PtrOffset(3*4))
+		gl.EnableVertexAttribArray(texCoordAttrib)
 
 		projection := mgl32.Perspective(64.0, float32(width)/float32(height), 1.0, 10000.0)
 		view := mgl32.LookAt(eye.X(), eye.Y(), eye.Z(), eye.X()+direction.X(), eye.Y()+direction.Y(), eye.Z()+direction.Z(), 0.0, 1.0, 0.0)
@@ -325,6 +349,8 @@ func game(level *Level, position *Point) {
 
 		gl.UniformMatrix4fv(matrixID, 1, false, &mvp[0])
 
+		gl.ActiveTexture(gl.TEXTURE0)
+		gl.BindTexture(gl.TEXTURE_2D, texture)
 		gl.DrawArrays(gl.TRIANGLES, 0, int32(len(vbo_data)))
 
 		window.SwapBuffers()
@@ -368,4 +394,40 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 	}
 
 	return shader, nil
+}
+
+func loadTexture(filename string) (uint32, error) {
+	imgFile, err := os.Open(filename)
+	if err != nil {
+		return 0, err
+	}
+	img, _, err := image.Decode(imgFile)
+	if err != nil {
+		return 0, fmt.Errorf("decode failed: %v", err)
+	}
+	rgba := image.NewRGBA(img.Bounds())
+	if rgba.Stride != rgba.Rect.Size().X*4 {
+		return 0, fmt.Errorf("unsupported stride")
+	}
+	draw.Draw(rgba, rgba.Bounds(), img, image.Point{0, 0}, draw.Src)
+
+	var texture uint32
+	gl.GenTextures(1, &texture)
+	gl.ActiveTexture(gl.TEXTURE0)
+	gl.BindTexture(gl.TEXTURE_2D, texture)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+	gl.TexImage2D(
+		gl.TEXTURE_2D,
+		0,
+		gl.RGBA,
+		int32(rgba.Rect.Size().X),
+		int32(rgba.Rect.Size().Y),
+		0,
+		gl.RGBA,
+		gl.UNSIGNED_BYTE,
+		gl.Ptr(rgba.Pix))
+	return texture, nil
 }
