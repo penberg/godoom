@@ -318,6 +318,8 @@ func game(level *Level, position *Point) {
 
 	matrixID := gl.GetUniformLocation(program, gl.Str("MVP\x00"))
 
+	gl.Enable(gl.DEPTH_TEST)
+	gl.DepthFunc(gl.LESS)
 	gl.ClearColor(0.3, 0.3, 0.3, 1.0)
 
 	for !window.ShouldClose() {
