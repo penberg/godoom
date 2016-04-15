@@ -63,7 +63,40 @@ type Point struct {
 	Y int16
 }
 
-func renderSubsector(level *Level, idx int, vertices []Point3) []Point3 {
+type VertexArray struct {
+	texture  string
+	vao      uint32
+	vbo      uint32
+	count    int
+}
+
+func NewVertexArray(texture string, vertices []Point3) VertexArray {
+	var vao uint32
+	gl.GenVertexArrays(1, &vao)
+	gl.BindVertexArray(vao)
+
+	var vbo uint32
+	gl.GenBuffers(1, &vbo)
+	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
+
+	vbo_data := []float32{}
+	for _, vertex := range vertices {
+		vbo_data = append(vbo_data, float32(vertex.X), float32(vertex.Y), float32(vertex.Z), vertex.U, vertex.V)
+	}
+	gl.BufferData(gl.ARRAY_BUFFER, len(vbo_data)*4, gl.Ptr(vbo_data), gl.STATIC_DRAW)
+
+	vertexAttrib := uint32(0)
+	gl.VertexAttribPointer(vertexAttrib, 3, gl.FLOAT, false, 5*4, gl.PtrOffset(0))
+	gl.EnableVertexAttribArray(vertexAttrib)
+
+	texCoordAttrib := uint32(1)
+	gl.VertexAttribPointer(texCoordAttrib, 2, gl.FLOAT, false, 5*4, gl.PtrOffset(3*4))
+	gl.EnableVertexAttribArray(texCoordAttrib)
+
+	return VertexArray{vao: vao, vbo: vbo, texture: texture, count: len(vbo_data)}
+}
+
+func renderSubsector(level *Level, idx int, vertices []VertexArray) []VertexArray {
 	ssector := level.SSectors[idx]
 	for seg := ssector.StartSeg; seg < ssector.StartSeg+ssector.Numsegs; seg++ {
 		vertices = append(vertices, renderSeg(level, int(seg), vertices)...)
@@ -71,7 +104,7 @@ func renderSubsector(level *Level, idx int, vertices []Point3) []Point3 {
 	return vertices
 }
 
-func renderSeg(level *Level, idx int, vertices []Point3) []Point3 {
+func renderSeg(level *Level, idx int, vertices []VertexArray) []VertexArray {
 	seg := level.Segs[idx]
 	return renderLinedef(level, &seg, int(seg.LineNum), vertices)
 }
@@ -98,12 +131,12 @@ func segOppositeSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
 	}
 }
 
-func renderLinedef(level *Level, seg *Seg, idx int, vertices []Point3) []Point3 {
+func renderLinedef(level *Level, seg *Seg, idx int, vertexArrays []VertexArray) []VertexArray {
 	linedef := level.Linedefs[idx]
 
 	sidedef := segSidedef(level, seg, &linedef)
 	if sidedef == nil {
-		return vertices
+		return vertexArrays
 	}
 	sector := level.Sectors[sidedef.SectorRef]
 
@@ -119,6 +152,8 @@ func renderLinedef(level *Level, seg *Seg, idx int, vertices []Point3) []Point3 
 	if upperTexture != "-" && oppositeSidedef != nil {
 		oppositeSector := level.Sectors[oppositeSidedef.SectorRef]
 
+		vertices := []Point3{}
+
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: oppositeSector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 0.0})
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 0.0})
@@ -126,9 +161,13 @@ func renderLinedef(level *Level, seg *Seg, idx int, vertices []Point3) []Point3 
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 0.0})
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 1.0})
+
+		vertexArrays = append(vertexArrays, NewVertexArray(upperTexture, vertices))
 	}
 
 	if middleTexture != "-" {
+		vertices := []Point3{}
+
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 0.0})
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 0.0})
@@ -136,10 +175,14 @@ func renderLinedef(level *Level, seg *Seg, idx int, vertices []Point3) []Point3 
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 0.0})
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord, U: 1.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
+
+		vertexArrays = append(vertexArrays, NewVertexArray(middleTexture, vertices))
 	}
 
 	if lowerTexture != "-" && oppositeSidedef != nil {
 		oppositeSector := level.Sectors[oppositeSidedef.SectorRef]
+
+		vertices := []Point3{}
 
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: oppositeSector.FloorHeight, Z: start.YCoord, U: 0.0, V: 0.0})
@@ -148,9 +191,11 @@ func renderLinedef(level *Level, seg *Seg, idx int, vertices []Point3) []Point3 
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: oppositeSector.FloorHeight, Z: end.YCoord, U: 1.0, V: 0.0})
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord, U: 1.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
+
+		vertexArrays = append(vertexArrays, NewVertexArray(lowerTexture, vertices))
 	}
 
-	return vertices
+	return vertexArrays
 }
 
 func pointOnSide(point *Point, node *Node) int {
@@ -165,7 +210,7 @@ func pointOnSide(point *Point, node *Node) int {
 	return 1
 }
 
-func traverseBsp(level *Level, point *Point, idx int, visibility bool, vertices []Point3) []Point3 {
+func traverseBsp(level *Level, point *Point, idx int, visibility bool, vertices []VertexArray) []VertexArray {
 	if idx&subsectorBit == subsectorBit {
 		if idx == -1 {
 			return renderSubsector(level, 0, vertices)
@@ -180,8 +225,8 @@ func traverseBsp(level *Level, point *Point, idx int, visibility bool, vertices 
 		side := pointOnSide(point, &node)
 		return traverseBsp(level, point, int(node.Child[side]), visibility, vertices)
 	} else {
-		left := traverseBsp(level, point, int(node.Child[0]), visibility, []Point3{})
-		right := traverseBsp(level, point, int(node.Child[1]), visibility, []Point3{})
+		left := traverseBsp(level, point, int(node.Child[0]), visibility, []VertexArray{})
+		right := traverseBsp(level, point, int(node.Child[1]), visibility, []VertexArray{})
 		vertices = append(vertices, left...)
 		vertices = append(vertices, right...)
 		return vertices
@@ -276,14 +321,6 @@ func game(level *Level, position *Point) {
 
 	gl.Init()
 
-	var vao uint32
-	gl.GenVertexArrays(1, &vao)
-	gl.BindVertexArray(vao)
-
-	var vbo uint32
-	gl.GenBuffers(1, &vbo)
-	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
-
 	texture, err := loadTexture("wall02_2.gif")
 	if err != nil {
 		panic(err)
@@ -294,12 +331,7 @@ func game(level *Level, position *Point) {
 	eye := mgl32.Vec3{float32(-position.X), 0.0, float32(position.Y)}
 	direction := mgl32.Vec3{0.0, 0.0, 1.0}
 
-	vertices := traverseBsp(level, position, len(level.Nodes)-1, false, []Point3{})
-	vbo_data := []float32{}
-	for _, vertex := range vertices {
-		vbo_data = append(vbo_data, float32(vertex.X), float32(vertex.Y), float32(vertex.Z), vertex.U, vertex.V)
-	}
-	gl.BufferData(gl.ARRAY_BUFFER, len(vbo_data)*4, gl.Ptr(vbo_data), gl.STATIC_DRAW)
+	vertexArrays := traverseBsp(level, position, len(level.Nodes)-1, false, []VertexArray{})
 
 	vertex_shader, err := compileShader(vertex, gl.VERTEX_SHADER)
 	if err != nil {
@@ -321,10 +353,6 @@ func game(level *Level, position *Point) {
 	gl.BindFragDataLocation(program, 0, gl.Str("outColor\x00"))
 	gl.LinkProgram(program)
 
-	vertexAttrib := uint32(gl.GetAttribLocation(program, gl.Str("vertex\x00")))
-
-	texCoordAttrib := uint32(gl.GetAttribLocation(program, gl.Str("vertTexCoord\x00")))
-
 	matrixID := gl.GetUniformLocation(program, gl.Str("MVP\x00"))
 
 	gl.Enable(gl.DEPTH_TEST)
@@ -336,12 +364,6 @@ func game(level *Level, position *Point) {
 
 		gl.UseProgram(program)
 
-		gl.VertexAttribPointer(vertexAttrib, 3, gl.FLOAT, false, 5*4, gl.PtrOffset(0))
-		gl.EnableVertexAttribArray(vertexAttrib)
-
-		gl.VertexAttribPointer(texCoordAttrib, 2, gl.FLOAT, false, 5*4, gl.PtrOffset(3*4))
-		gl.EnableVertexAttribArray(texCoordAttrib)
-
 		projection := mgl32.Perspective(64.0, float32(width)/float32(height), 1.0, 10000.0)
 		view := mgl32.LookAt(eye.X(), eye.Y(), eye.Z(), eye.X()+direction.X(), eye.Y()+direction.Y(), eye.Z()+direction.Z(), 0.0, 1.0, 0.0)
 		model := mgl32.Ident4()
@@ -351,7 +373,11 @@ func game(level *Level, position *Point) {
 
 		gl.ActiveTexture(gl.TEXTURE0)
 		gl.BindTexture(gl.TEXTURE_2D, texture)
-		gl.DrawArrays(gl.TRIANGLES, 0, int32(len(vbo_data)))
+
+		for _, vertexArray := range vertexArrays {
+			gl.BindVertexArray(vertexArray.vao)
+			gl.DrawArrays(gl.TRIANGLES, 0, int32(vertexArray.count))
+		}
 
 		window.SwapBuffers()
 		glfw.PollEvents()
