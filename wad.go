@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -22,10 +23,12 @@ type WAD struct {
 	pnamesLump   int
 	playpalLump  int
 	pnames       []String8
-	playpal      *Playpal
+	patches      map[string]Image
+	Playpal      *Playpal
 	textureLumps []int
 	textures     map[string]Texture
 	levels       map[string]int
+	lumps        map[string]int
 	lumpInfos    []lumpInfo
 }
 
@@ -61,6 +64,19 @@ type Patch struct {
 	PNameNumber int16
 	Stepdir     int16
 	ColorMap    int16
+}
+
+type Image struct {
+	Width  int
+	Height int
+	Pixels []byte
+}
+
+type PictureHeader struct {
+	Width      int16
+	Height     int16
+	LeftOffset int16
+	TopOffset  int16
 }
 
 type Level struct {
@@ -201,12 +217,17 @@ func ReadWAD(filename string) (*WAD, error) {
 	if err != nil {
 		return nil, err
 	}
-	wad.playpal = playpal
+	wad.Playpal = playpal
 	pnames, err := wad.readPatchNames()
 	if err != nil {
 		return nil, err
 	}
 	wad.pnames = pnames
+	patches, err := wad.readPatchLumps()
+	if err != nil {
+		return nil, err
+	}
+	wad.patches = patches
 	textures, err := wad.readTextureLumps()
 	if err != nil {
 		return nil, err
@@ -230,6 +251,7 @@ func (w *WAD) readInfoTables() error {
 	pnamesLump := -1
 	playpalLump := -1
 	textureLumps := make([]int, 0, 2)
+	lumps := map[string]int{}
 	levels := map[string]int{}
 	lumpInfos := make([]lumpInfo, w.header.NumLumps, w.header.NumLumps)
 	for i := int32(0); i < w.header.NumLumps; i++ {
@@ -251,12 +273,14 @@ func (w *WAD) readInfoTables() error {
 			levelLump := lumpInfos[levelIdx]
 			levels[ToString(levelLump.Name)] = levelIdx
 		}
+		lumps[ToString(lumpInfo.Name)] = int(i)
 		lumpInfos[i] = lumpInfo
 	}
 	w.pnamesLump = pnamesLump
 	w.playpalLump = playpalLump
 	w.textureLumps = textureLumps
 	w.levels = levels
+	w.lumps = lumps
 	w.lumpInfos = lumpInfos
 	return nil
 }
@@ -289,6 +313,58 @@ func (w *WAD) readPatchNames() ([]String8, error) {
 		return nil, err
 	}
 	return pnames, nil
+}
+
+func (w *WAD) readPatchLumps() (map[string]Image, error) {
+	patches := make(map[string]Image)
+	for _, pname := range w.pnames {
+		lumpInfo := w.lumpInfos[w.lumps[ToString(pname)]]
+		if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
+			return nil, err
+		}
+		lump := make([]byte, lumpInfo.Size, lumpInfo.Size)
+		n, err := w.file.Read(lump)
+		if err != nil {
+			return nil, err
+		}
+		if n != int(lumpInfo.Size) {
+			return nil, fmt.Errorf("Truncated lump")
+		}
+		reader := bytes.NewBuffer(lump[0:])
+		var header PictureHeader
+		if err := binary.Read(reader, binary.LittleEndian, &header); err != nil {
+			return nil, err
+		}
+		if header.Width > 4096 || header.Height > 4096 {
+			continue
+		}
+		offsets := make([]int32, header.Width, header.Width)
+		if err := binary.Read(reader, binary.LittleEndian, offsets); err != nil {
+			return nil, err
+		}
+		size := int(header.Width) * int(header.Height)
+		pixels := make([]byte, size, size)
+		for columnIndex, offset := range offsets {
+			for {
+				rowStart := lump[offset]
+				offset += 1
+				if rowStart == 255 {
+					break
+				}
+				numPixels := lump[offset]
+				offset += 1
+				offset += 1 /* Padding */
+				for i := 0; i < int(numPixels); i++ {
+					pixelOffset := (int(rowStart)+i)*int(header.Width) + columnIndex
+					pixels[pixelOffset] = lump[offset]
+					offset += 1
+				}
+				offset += 1 /* Padding */
+			}
+		}
+		patches[ToString(pname)] = Image{Width: int(header.Width), Height: int(header.Height), Pixels: pixels}
+	}
+	return patches, nil
 }
 
 func (w *WAD) readTextureLumps() (map[string]Texture, error) {
@@ -336,6 +412,16 @@ func (w *WAD) seek(offset int64) error {
 		return fmt.Errorf("seek failed")
 	}
 	return nil
+}
+
+func (w *WAD) LoadTexture(texname string) (*Texture, error) {
+	texture := w.textures[texname]
+	return &texture, nil
+}
+
+func (w *WAD) LoadImage(pnameNumber int16) (*Image, error) {
+	image := w.patches[ToString(w.pnames[pnameNumber])]
+	return &image, nil
 }
 
 // LevelNames returns an array of level names found in the WAD archive.

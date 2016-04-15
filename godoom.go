@@ -7,9 +7,7 @@ import (
 	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/go-gl/mathgl/mgl32"
 	"image"
-	_ "image/gif"
-
-	"image/draw"
+	"image/color"
 	"log"
 	"os"
 	"runtime"
@@ -64,10 +62,10 @@ type Point struct {
 }
 
 type VertexArray struct {
-	texture  string
-	vao      uint32
-	vbo      uint32
-	count    int
+	texture string
+	vao     uint32
+	vbo     uint32
+	count   int
 }
 
 func NewVertexArray(texture string, vertices []Point3) VertexArray {
@@ -288,12 +286,12 @@ func main() {
 			X: player1.XPosition,
 			Y: player1.YPosition,
 		}
-		game(level, position)
+		game(wad, level, position)
 	}
 	app.Run(os.Args)
 }
 
-func game(level *Level, position *Point) {
+func game(wad *WAD, level *Level, position *Point) {
 	runtime.LockOSThread()
 
 	if err := glfw.Init(); err != nil {
@@ -321,17 +319,26 @@ func game(level *Level, position *Point) {
 
 	gl.Init()
 
-	texture, err := loadTexture("wall02_2.gif")
-	if err != nil {
-		panic(err)
-	}
-
 	speed := float32(5.0)
 
 	eye := mgl32.Vec3{float32(-position.X), 0.0, float32(position.Y)}
 	direction := mgl32.Vec3{0.0, 0.0, 1.0}
 
 	vertexArrays := traverseBsp(level, position, len(level.Nodes)-1, false, []VertexArray{})
+
+	textures := map[string]uint32{}
+
+	for _, vertexArray := range vertexArrays {
+		_, loaded := textures[vertexArray.texture]
+		if loaded {
+			continue
+		}
+		texture, err := loadTexture(wad, vertexArray.texture)
+		if err != nil {
+			panic(err)
+		}
+		textures[vertexArray.texture] = texture
+	}
 
 	vertex_shader, err := compileShader(vertex, gl.VERTEX_SHADER)
 	if err != nil {
@@ -372,9 +379,9 @@ func game(level *Level, position *Point) {
 		gl.UniformMatrix4fv(matrixID, 1, false, &mvp[0])
 
 		gl.ActiveTexture(gl.TEXTURE0)
-		gl.BindTexture(gl.TEXTURE_2D, texture)
 
 		for _, vertexArray := range vertexArrays {
+			gl.BindTexture(gl.TEXTURE_2D, textures[vertexArray.texture])
 			gl.BindVertexArray(vertexArray.vao)
 			gl.DrawArrays(gl.TRIANGLES, 0, int32(vertexArray.count))
 		}
@@ -422,25 +429,38 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 	return shader, nil
 }
 
-func loadTexture(filename string) (uint32, error) {
-	imgFile, err := os.Open(filename)
+func loadTexture(wad *WAD, texname string) (uint32, error) {
+	texture, err := wad.LoadTexture(texname)
 	if err != nil {
 		return 0, err
 	}
-	img, _, err := image.Decode(imgFile)
-	if err != nil {
-		return 0, fmt.Errorf("decode failed: %v", err)
+	if texture.Header == nil {
+		// FIXME: Why do we have a texture with no header?
+		return 0, nil
 	}
-	rgba := image.NewRGBA(img.Bounds())
+	bounds := image.Rect(0, 0, int(texture.Header.Width), int(texture.Header.Height))
+	rgba := image.NewRGBA(bounds)
 	if rgba.Stride != rgba.Rect.Size().X*4 {
 		return 0, fmt.Errorf("unsupported stride")
 	}
-	draw.Draw(rgba, rgba.Bounds(), img, image.Point{0, 0}, draw.Src)
+	for _, patch := range texture.Patches {
+		image, err := wad.LoadImage(patch.PNameNumber)
+		if err != nil {
+			return 0, err
+		}
+		for y := 0; y < image.Height; y++ {
+			for x := 0; x < image.Width; x++ {
+				pixel := image.Pixels[y*image.Width+x]
+				rgb := wad.Playpal.Palettes[0].Table[pixel]
+				rgba.Set(int(patch.XOffset)+x, int(patch.YOffset)+y, color.RGBA{rgb.Red, rgb.Green, rgb.Blue, 255})
+			}
+		}
+	}
 
-	var texture uint32
-	gl.GenTextures(1, &texture)
+	var texId uint32
+	gl.GenTextures(1, &texId)
 	gl.ActiveTexture(gl.TEXTURE0)
-	gl.BindTexture(gl.TEXTURE_2D, texture)
+	gl.BindTexture(gl.TEXTURE_2D, texId)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
@@ -455,5 +475,5 @@ func loadTexture(filename string) (uint32, error) {
 		gl.RGBA,
 		gl.UNSIGNED_BYTE,
 		gl.Ptr(rgba.Pix))
-	return texture, nil
+	return texId, nil
 }
