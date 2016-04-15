@@ -1,11 +1,8 @@
 # GoDoom
 
-GoDoom is a Doom clone written from scratch in Go. It currently is able
-to read Doom WAD files and render a 2D automap of the levels.
+GoDoom is a Doom rendered written from scratch in the Go programming language using OpenGL for rendering.
 
-## Screenshots
-
-![Automap Screenshot](screenshots/automap.png)
+![Level Screenshot](screenshots/level.png)
 
 ## Installation
 
