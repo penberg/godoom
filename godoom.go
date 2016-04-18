@@ -236,6 +236,37 @@ func traverseBsp(level *Level, point *Point, idx int, visibility bool, vertices 
 	}
 }
 
+func intersects(point *Point, bbox *BBox) bool {
+	return point.X > bbox.Left && point.X < bbox.Right && point.Y > bbox.Bottom && point.Y < bbox.Top
+}
+
+func findSector(level *Level, point *Point, idx int) *Sector {
+	if idx&subsectorBit == subsectorBit {
+		idx = int(uint16(idx) & ^uint16(subsectorBit))
+		ssector := level.SSectors[idx]
+		for segIdx := ssector.StartSeg; segIdx < ssector.StartSeg+ssector.Numsegs; segIdx++ {
+			seg := level.Segs[segIdx]
+			linedef := level.Linedefs[seg.LineNum]
+			sidedef := segSidedef(level, &seg, &linedef)
+			if sidedef != nil {
+				return &level.Sectors[sidedef.SectorRef]
+			}
+			oppositeSidedef := segOppositeSidedef(level, &seg, &linedef)
+			if oppositeSidedef != nil {
+				return &level.Sectors[oppositeSidedef.SectorRef]
+			}
+		}
+	}
+	node := level.Nodes[idx]
+	if intersects(point, &node.BBox[0]) {
+		return findSector(level, point, int(node.Child[0]))
+	}
+	if intersects(point, &node.BBox[1]) {
+		return findSector(level, point, int(node.Child[1]))
+	}
+	return nil
+}
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "godoom"
@@ -296,7 +327,7 @@ func main() {
 	app.Run(os.Args)
 }
 
-func game(wad *WAD, level *Level, position *Point) {
+func game(wad *WAD, level *Level, startPos *Point) {
 	runtime.LockOSThread()
 
 	if err := glfw.Init(); err != nil {
@@ -326,10 +357,11 @@ func game(wad *WAD, level *Level, position *Point) {
 
 	speed := float32(5.0)
 
-	eye := mgl32.Vec3{float32(-position.X), 0.0, float32(position.Y)}
+	position := mgl32.Vec2{float32(startPos.X), float32(startPos.Y)}
+
 	direction := mgl32.Vec3{0.0, 0.0, 1.0}
 
-	vertexArrays := traverseBsp(level, position, len(level.Nodes)-1, false, []VertexArray{})
+	vertexArrays := traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, false, []VertexArray{})
 
 	textures := map[string]uint32{}
 
@@ -371,10 +403,18 @@ func game(wad *WAD, level *Level, position *Point) {
 	gl.DepthFunc(gl.LESS)
 	gl.ClearColor(0.3, 0.3, 0.3, 1.0)
 
+	floorHeight := int16(0)
+
 	for !window.ShouldClose() {
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
 		gl.UseProgram(program)
+
+		sector := findSector(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1)
+		if sector != nil {
+			floorHeight = sector.FloorHeight + 10
+		}
+		eye := mgl32.Vec3{-position.X(), float32(floorHeight), position.Y()}
 
 		projection := mgl32.Perspective(64.0, float32(width)/float32(height), 1.0, 10000.0)
 		view := mgl32.LookAt(eye.X(), eye.Y(), eye.Z(), eye.X()+direction.X(), eye.Y()+direction.Y(), eye.Z()+direction.Z(), 0.0, 1.0, 0.0)
@@ -398,10 +438,10 @@ func game(wad *WAD, level *Level, position *Point) {
 			window.SetShouldClose(true)
 		}
 		if window.GetKey(glfw.KeyUp) == glfw.Press {
-			eye = eye.Add(direction.Mul(speed))
+			position = position.Add(mgl32.Vec2{-direction.X(), direction.Z()}.Mul(speed))
 		}
 		if window.GetKey(glfw.KeyDown) == glfw.Press {
-			eye = eye.Sub(direction.Mul(speed))
+			position = position.Sub(mgl32.Vec2{-direction.X(), direction.Z()}.Mul(speed))
 		}
 		if window.GetKey(glfw.KeyLeft) == glfw.Press {
 			direction = mgl32.QuatRotate(0.1, mgl32.Vec3{0.0, 1.0, 0.0}).Rotate(direction)
