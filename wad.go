@@ -18,18 +18,19 @@ type String8 [8]byte
 // graphics, sounds, and level data. The data is organized as named
 // lumps.
 type WAD struct {
-	header       *header
-	file         *os.File
-	pnamesLump   int
-	playpalLump  int
-	pnames       []String8
-	patches      map[string]Image
-	Playpal      *Playpal
-	textureLumps []int
-	textures     map[string]Texture
-	levels       map[string]int
-	lumps        map[string]int
-	lumpInfos    []lumpInfo
+	header                  *header
+	file                    *os.File
+	pnamesLump              int
+	playpalLump             int
+	pnames                  []String8
+	patches                 map[string]Image
+	TransparentPaletteIndex byte
+	Playpal                 *Playpal
+	textureLumps            []int
+	textures                map[string]Texture
+	levels                  map[string]int
+	lumps                   map[string]int
+	lumpInfos               []lumpInfo
 }
 
 type header struct {
@@ -218,6 +219,7 @@ func ReadWAD(filename string) (*WAD, error) {
 		return nil, err
 	}
 	wad.Playpal = playpal
+	wad.TransparentPaletteIndex = 255
 	pnames, err := wad.readPatchNames()
 	if err != nil {
 		return nil, err
@@ -344,6 +346,11 @@ func (w *WAD) readPatchLumps() (map[string]Image, error) {
 		}
 		size := int(header.Width) * int(header.Height)
 		pixels := make([]byte, size, size)
+		for y := 0; y < int(header.Height); y++ {
+			for x := 0; x < int(header.Width); x++ {
+				pixels[y*int(header.Width)+x] = w.TransparentPaletteIndex
+			}
+		}
 		for columnIndex, offset := range offsets {
 			for {
 				rowStart := lump[offset]

@@ -40,7 +40,12 @@ out vec4 outColor;
 
 void main()
 {
-    outColor = texture(tex, fragTexCoord);
+    float alpha = texture(tex, fragTexCoord).a;
+    if (alpha == 1.0) {
+        outColor = texture(tex, fragTexCoord);
+    } else {
+        discard;
+    }
 }` + "\x00"
 )
 
@@ -451,8 +456,14 @@ func loadTexture(wad *WAD, texname string) (uint32, error) {
 		for y := 0; y < image.Height; y++ {
 			for x := 0; x < image.Width; x++ {
 				pixel := image.Pixels[y*image.Width+x]
+				var alpha uint8
+				if pixel == wad.TransparentPaletteIndex {
+					alpha = 0
+				} else {
+					alpha = 255
+				}
 				rgb := wad.Playpal.Palettes[0].Table[pixel]
-				rgba.Set(int(patch.XOffset)+x, int(patch.YOffset)+y, color.RGBA{rgb.Red, rgb.Green, rgb.Blue, 255})
+				rgba.Set(int(patch.XOffset)+x, int(patch.YOffset)+y, color.RGBA{rgb.Red, rgb.Green, rgb.Blue, alpha})
 			}
 		}
 	}
