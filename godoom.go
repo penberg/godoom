@@ -335,7 +335,7 @@ func game(wad *WAD, level *Level, startPos *Point) {
 	}
 	defer glfw.Terminate()
 
-	glfw.WindowHint(glfw.Resizable, glfw.False)
+	glfw.WindowHint(glfw.Resizable, glfw.True)
 	glfw.WindowHint(glfw.ContextVersionMajor, 3)
 	glfw.WindowHint(glfw.ContextVersionMinor, 3)
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
@@ -347,8 +347,6 @@ func game(wad *WAD, level *Level, startPos *Point) {
 	}
 
 	defer window.Destroy()
-
-	width, height := window.GetSize()
 
 	window.MakeContextCurrent()
 	glfw.SwapInterval(1)
@@ -416,6 +414,8 @@ func game(wad *WAD, level *Level, startPos *Point) {
 		}
 		eye := mgl32.Vec3{-position.X(), float32(floorHeight), position.Y()}
 
+		width, height := window.GetFramebufferSize()
+		gl.Viewport(0, 0, int32(width), int32(height))
 		projection := mgl32.Perspective(64.0, float32(width)/float32(height), 1.0, 10000.0)
 		view := mgl32.LookAt(eye.X(), eye.Y(), eye.Z(), eye.X()+direction.X(), eye.Y()+direction.Y(), eye.Z()+direction.Z(), 0.0, 1.0, 0.0)
 		model := mgl32.Ident4()
