@@ -20,13 +20,10 @@ type String8 [8]byte
 type WAD struct {
 	header                  *header
 	file                    *os.File
-	pnamesLump              int
-	playpalLump             int
 	pnames                  []String8
 	patches                 map[string]Image
 	TransparentPaletteIndex byte
 	Playpal                 *Playpal
-	textureLumps            []int
 	textures                map[string]Texture
 	levels                  map[string]int
 	lumps                   map[string]int
@@ -250,9 +247,6 @@ func (w *WAD) readInfoTables() error {
 	if err := w.seek(int64(w.header.InfoTableOfs)); err != nil {
 		return err
 	}
-	pnamesLump := -1
-	playpalLump := -1
-	textureLumps := make([]int, 0, 2)
 	lumps := map[string]int{}
 	levels := map[string]int{}
 	lumpInfos := make([]lumpInfo, w.header.NumLumps, w.header.NumLumps)
@@ -260,15 +254,6 @@ func (w *WAD) readInfoTables() error {
 		var lumpInfo lumpInfo
 		if err := binary.Read(w.file, binary.LittleEndian, &lumpInfo); err != nil {
 			return err
-		}
-		if ToString(lumpInfo.Name) == "PNAMES" {
-			pnamesLump = int(i)
-		}
-		if ToString(lumpInfo.Name) == "PLAYPAL" {
-			playpalLump = int(i)
-		}
-		if ToString(lumpInfo.Name) == "TEXTURE1" || ToString(lumpInfo.Name) == "TEXTURE2" {
-			textureLumps = append(textureLumps, int(i))
 		}
 		if ToString(lumpInfo.Name) == "THINGS" {
 			levelIdx := int(i - 1)
@@ -278,9 +263,6 @@ func (w *WAD) readInfoTables() error {
 		lumps[ToString(lumpInfo.Name)] = int(i)
 		lumpInfos[i] = lumpInfo
 	}
-	w.pnamesLump = pnamesLump
-	w.playpalLump = playpalLump
-	w.textureLumps = textureLumps
 	w.levels = levels
 	w.lumps = lumps
 	w.lumpInfos = lumpInfos
@@ -288,7 +270,8 @@ func (w *WAD) readInfoTables() error {
 }
 
 func (w *WAD) readPlaypal() (*Playpal, error) {
-	lumpInfo := w.lumpInfos[w.playpalLump]
+	playpalLump := w.lumps["PLAYPAL"]
+	lumpInfo := w.lumpInfos[playpalLump]
 	if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
 		return nil, err
 	}
@@ -301,7 +284,8 @@ func (w *WAD) readPlaypal() (*Playpal, error) {
 }
 
 func (w *WAD) readPatchNames() ([]String8, error) {
-	lumpInfo := w.lumpInfos[w.pnamesLump]
+	pnamesLump := w.lumps["PNAMES"]
+	lumpInfo := w.lumpInfos[pnamesLump]
 	if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
 		return nil, err
 	}
@@ -375,8 +359,15 @@ func (w *WAD) readPatchLumps() (map[string]Image, error) {
 }
 
 func (w *WAD) readTextureLumps() (map[string]Texture, error) {
+	textureLumps := make([]int, 0, 2)
+	if lump, ok := w.lumps["TEXTURE1"]; ok {
+		textureLumps = append(textureLumps, lump)
+	}
+	if lump, ok := w.lumps["TEXTURE2"]; ok {
+		textureLumps = append(textureLumps, lump)
+	}
 	textures := make(map[string]Texture)
-	for _, i := range w.textureLumps {
+	for _, i := range textureLumps {
 		lumpInfo := w.lumpInfos[i]
 		if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
 			return nil, err
