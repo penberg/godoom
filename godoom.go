@@ -32,6 +32,7 @@ void main()
 
 	fragment = `#version 330
 
+uniform float LightLevel;
 uniform sampler2D tex;
 
 in vec2 fragTexCoord;
@@ -42,7 +43,7 @@ void main()
 {
     float alpha = texture(tex, fragTexCoord).a;
     if (alpha == 1.0) {
-        outColor = texture(tex, fragTexCoord);
+        outColor = texture(tex, fragTexCoord) * LightLevel;
     } else {
         discard;
     }
@@ -67,13 +68,14 @@ type Point struct {
 }
 
 type VertexArray struct {
-	texture string
-	vao     uint32
-	vbo     uint32
-	count   int
+	texture    string
+	vao        uint32
+	vbo        uint32
+	count      int
+	lightLevel float32
 }
 
-func NewVertexArray(texture string, vertices []Point3) VertexArray {
+func NewVertexArray(texture string, lightLevel int16, vertices []Point3) VertexArray {
 	var vao uint32
 	gl.GenVertexArrays(1, &vao)
 	gl.BindVertexArray(vao)
@@ -96,7 +98,7 @@ func NewVertexArray(texture string, vertices []Point3) VertexArray {
 	gl.VertexAttribPointer(texCoordAttrib, 2, gl.FLOAT, false, 5*4, gl.PtrOffset(3*4))
 	gl.EnableVertexAttribArray(texCoordAttrib)
 
-	return VertexArray{vao: vao, vbo: vbo, texture: texture, count: len(vbo_data)}
+	return VertexArray{vao: vao, vbo: vbo, texture: texture, count: len(vbo_data), lightLevel: float32(lightLevel) / 255.0}
 }
 
 func renderSubsector(level *Level, idx int, vertices []VertexArray) []VertexArray {
@@ -165,7 +167,7 @@ func renderLinedef(level *Level, seg *Seg, idx int, vertexArrays []VertexArray) 
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 
-		vertexArrays = append(vertexArrays, NewVertexArray(upperTexture, vertices))
+		vertexArrays = append(vertexArrays, NewVertexArray(upperTexture, sector.Lightlevel, vertices))
 	}
 
 	if middleTexture != "-" {
@@ -179,7 +181,7 @@ func renderLinedef(level *Level, seg *Seg, idx int, vertexArrays []VertexArray) 
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord, U: 1.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 
-		vertexArrays = append(vertexArrays, NewVertexArray(middleTexture, vertices))
+		vertexArrays = append(vertexArrays, NewVertexArray(middleTexture, sector.Lightlevel, vertices))
 	}
 
 	if lowerTexture != "-" && oppositeSidedef != nil {
@@ -195,7 +197,7 @@ func renderLinedef(level *Level, seg *Seg, idx int, vertexArrays []VertexArray) 
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord, U: 1.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 
-		vertexArrays = append(vertexArrays, NewVertexArray(lowerTexture, vertices))
+		vertexArrays = append(vertexArrays, NewVertexArray(lowerTexture, sector.Lightlevel, vertices))
 	}
 
 	return vertexArrays
@@ -395,6 +397,7 @@ func game(wad *WAD, level *Level, startPos *Point) {
 	gl.BindFragDataLocation(program, 0, gl.Str("outColor\x00"))
 	gl.LinkProgram(program)
 
+	lightLevelID := gl.GetUniformLocation(program, gl.Str("LightLevel\x00"))
 	matrixID := gl.GetUniformLocation(program, gl.Str("MVP\x00"))
 
 	gl.Enable(gl.DEPTH_TEST)
@@ -412,6 +415,7 @@ func game(wad *WAD, level *Level, startPos *Point) {
 		if sector != nil {
 			floorHeight = sector.FloorHeight + 10
 		}
+
 		eye := mgl32.Vec3{-position.X(), float32(floorHeight), position.Y()}
 
 		width, height := window.GetFramebufferSize()
@@ -426,6 +430,7 @@ func game(wad *WAD, level *Level, startPos *Point) {
 		gl.ActiveTexture(gl.TEXTURE0)
 
 		for _, vertexArray := range vertexArrays {
+			gl.Uniform1f(lightLevelID, vertexArray.lightLevel)
 			gl.BindTexture(gl.TEXTURE_2D, textures[vertexArray.texture])
 			gl.BindVertexArray(vertexArray.vao)
 			gl.DrawArrays(gl.TRIANGLES, 0, int32(vertexArray.count))
