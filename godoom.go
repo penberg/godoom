@@ -350,6 +350,8 @@ func game(wad *WAD, level *Level, startPos *Point) {
 
 	defer window.Destroy()
 
+	window.SetInputMode(glfw.CursorMode, glfw.CursorDisabled)
+
 	window.MakeContextCurrent()
 	glfw.SwapInterval(1)
 
