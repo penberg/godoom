@@ -415,7 +415,7 @@ func game(wad *WAD, level *Level, startPos *Point) {
 
 		sector := findSector(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1)
 		if sector != nil {
-			floorHeight = sector.FloorHeight + 10
+			floorHeight = sector.FloorHeight + 30
 		}
 
 		eye := mgl32.Vec3{-position.X(), float32(floorHeight), position.Y()}
