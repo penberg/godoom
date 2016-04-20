@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"log"
+	"math"
 	"os"
 	"runtime"
 	"strings"
@@ -324,12 +325,12 @@ func main() {
 			X: player1.XPosition,
 			Y: player1.YPosition,
 		}
-		game(wad, level, position)
+		game(wad, level, position, player1.Angle)
 	}
 	app.Run(os.Args)
 }
 
-func game(wad *WAD, level *Level, startPos *Point) {
+func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 	runtime.LockOSThread()
 
 	if err := glfw.Init(); err != nil {
@@ -361,7 +362,7 @@ func game(wad *WAD, level *Level, startPos *Point) {
 
 	position := mgl32.Vec2{float32(startPos.X), float32(startPos.Y)}
 
-	direction := mgl32.Vec3{0.0, 0.0, 1.0}
+	angle := startAngle
 
 	scene := Scene{}
 
@@ -422,6 +423,10 @@ func game(wad *WAD, level *Level, startPos *Point) {
 
 		eye := mgl32.Vec3{-position.X(), float32(floorHeight), position.Y()}
 
+		y, x := math.Sincos(float64(angle) * math.Pi / 180)
+
+		direction := mgl32.Vec3{float32(x), 0.0, float32(y)}
+
 		width, height := window.GetFramebufferSize()
 		gl.Viewport(0, 0, int32(width), int32(height))
 		projection := mgl32.Perspective(64.0, float32(width)/float32(height), 1.0, 10000.0)
@@ -453,10 +458,10 @@ func game(wad *WAD, level *Level, startPos *Point) {
 			position = position.Sub(mgl32.Vec2{-direction.X(), direction.Z()}.Mul(speed))
 		}
 		if window.GetKey(glfw.KeyLeft) == glfw.Press {
-			direction = mgl32.QuatRotate(0.1, mgl32.Vec3{0.0, 1.0, 0.0}).Rotate(direction)
+			angle -= int16(speed)
 		}
 		if window.GetKey(glfw.KeyRight) == glfw.Press {
-			direction = mgl32.QuatRotate(-0.1, mgl32.Vec3{0.0, 1.0, 0.0}).Rotate(direction)
+			angle += int16(speed)
 		}
 	}
 }
