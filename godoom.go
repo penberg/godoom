@@ -205,19 +205,7 @@ func renderLinedef(level *Level, seg *Seg, idx int, scene *Scene) {
 	}
 }
 
-func pointOnSide(point *Point, node *Node) int {
-	dx := point.X - node.X
-	dy := point.Y - node.Y
-	// Perp dot product:
-	if dy*node.DX>>16-node.DY>>16*dx < 0 {
-		// Point is on front side:
-		return 0
-	}
-	// Point is on the back side:
-	return 1
-}
-
-func traverseBsp(level *Level, point *Point, idx int, visibility bool, scene *Scene) {
+func traverseBsp(level *Level, point *Point, idx int, scene *Scene) {
 	if idx&subsectorBit == subsectorBit {
 		if idx == -1 {
 			renderSubsector(level, 0, scene)
@@ -228,15 +216,8 @@ func traverseBsp(level *Level, point *Point, idx int, visibility bool, scene *Sc
 		}
 	}
 	node := level.Nodes[idx]
-
-	if visibility {
-		// TODO: Traverse back space if inside node's bounding box.
-		side := pointOnSide(point, &node)
-		traverseBsp(level, point, int(node.Child[side]), visibility, scene)
-	} else {
-		traverseBsp(level, point, int(node.Child[0]), visibility, scene)
-		traverseBsp(level, point, int(node.Child[1]), visibility, scene)
-	}
+	traverseBsp(level, point, int(node.Child[0]), scene)
+	traverseBsp(level, point, int(node.Child[1]), scene)
 }
 
 func intersects(point *Point, bbox *BBox) bool {
@@ -366,7 +347,7 @@ func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 
 	scene := Scene{}
 
-	traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, false, &scene)
+	traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, &scene)
 
 	textures := map[string]uint32{}
 
