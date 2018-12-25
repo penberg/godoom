@@ -252,6 +252,7 @@ func findSector(level *Level, point *Point, idx int) *Sector {
 }
 
 func main() {
+	runtime.LockOSThread()
 	app := cli.NewApp()
 	app.Name = "godoom"
 	app.Usage = "A Doom clone written in Go!"
