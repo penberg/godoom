@@ -78,6 +78,26 @@ type VertexArray struct {
 
 type Scene struct {
 	vertexArrays []VertexArray
+	textures     map[string]uint32
+}
+
+func NewScene() Scene {
+	return Scene{
+		textures: make(map[string]uint32),
+	}
+}
+
+func (scene *Scene) CacheTexture(wad *WAD, name string) error {
+	_, loaded := scene.textures[name]
+	if loaded {
+		return nil
+	}
+	texture, err := loadTexture(wad, name)
+	if err != nil {
+		return err
+	}
+	scene.textures[name] = texture
+	return nil
 }
 
 func NewVertexArray(texture string, lightLevel int16, vertices []Point3) VertexArray {
@@ -106,16 +126,16 @@ func NewVertexArray(texture string, lightLevel int16, vertices []Point3) VertexA
 	return VertexArray{vao: vao, vbo: vbo, texture: texture, count: len(vbo_data), lightLevel: float32(lightLevel) / 255.0}
 }
 
-func renderSubsector(level *Level, idx int, scene *Scene) {
+func genSubsector(wad *WAD, level *Level, idx int, scene *Scene) {
 	ssector := level.SSectors[idx]
 	for seg := ssector.StartSeg; seg < ssector.StartSeg+ssector.Numsegs; seg++ {
-		renderSeg(level, int(seg), scene)
+		genSeg(wad, level, int(seg), scene)
 	}
 }
 
-func renderSeg(level *Level, idx int, scene *Scene) {
+func genSeg(wad *WAD, level *Level, idx int, scene *Scene) {
 	seg := level.Segs[idx]
-	renderLinedef(level, &seg, int(seg.LineNum), scene)
+	genLinedef(wad, level, &seg, int(seg.LineNum), scene)
 }
 
 func segSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
@@ -140,7 +160,7 @@ func segOppositeSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
 	}
 }
 
-func renderLinedef(level *Level, seg *Seg, idx int, scene *Scene) {
+func genLinedef(wad *WAD, level *Level, seg *Seg, idx int, scene *Scene) {
 	linedef := level.Linedefs[idx]
 
 	sidedef := segSidedef(level, seg, &linedef)
@@ -172,6 +192,8 @@ func renderLinedef(level *Level, seg *Seg, idx int, scene *Scene) {
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 
 		scene.vertexArrays = append(scene.vertexArrays, NewVertexArray(upperTexture, sector.Lightlevel, vertices))
+
+		scene.CacheTexture(wad, upperTexture)
 	}
 
 	if middleTexture != "-" {
@@ -186,6 +208,8 @@ func renderLinedef(level *Level, seg *Seg, idx int, scene *Scene) {
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 
 		scene.vertexArrays = append(scene.vertexArrays, NewVertexArray(middleTexture, sector.Lightlevel, vertices))
+
+		scene.CacheTexture(wad, middleTexture)
 	}
 
 	if lowerTexture != "-" && oppositeSidedef != nil {
@@ -202,6 +226,8 @@ func renderLinedef(level *Level, seg *Seg, idx int, scene *Scene) {
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 
 		scene.vertexArrays = append(scene.vertexArrays, NewVertexArray(lowerTexture, sector.Lightlevel, vertices))
+
+		scene.CacheTexture(wad, lowerTexture)
 	}
 }
 
@@ -348,25 +374,12 @@ func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 
 	angle := startAngle
 
-	scene := Scene{}
+	fmt.Printf("Generating scene ...\n")
+	scene := NewScene()
 	var action bspAction = func(level *Level, idx int) {
-		renderSubsector(level, idx, &scene)
+		genSubsector(wad, level, idx, &scene)
 	}
 	traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, action)
-
-	textures := map[string]uint32{}
-
-	for _, vertexArray := range scene.vertexArrays {
-		_, loaded := textures[vertexArray.texture]
-		if loaded {
-			continue
-		}
-		texture, err := loadTexture(wad, vertexArray.texture)
-		if err != nil {
-			panic(err)
-		}
-		textures[vertexArray.texture] = texture
-	}
 
 	vertex_shader, err := compileShader(vertex, gl.VERTEX_SHADER)
 	if err != nil {
@@ -426,7 +439,7 @@ func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 
 		for _, vertexArray := range scene.vertexArrays {
 			gl.Uniform1f(lightLevelID, vertexArray.lightLevel)
-			gl.BindTexture(gl.TEXTURE_2D, textures[vertexArray.texture])
+			gl.BindTexture(gl.TEXTURE_2D, scene.textures[vertexArray.texture])
 			gl.BindVertexArray(vertexArray.vao)
 			gl.DrawArrays(gl.TRIANGLES, 0, int32(vertexArray.count))
 		}
