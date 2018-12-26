@@ -236,9 +236,11 @@ func genLinedef(wad *WAD, level *Level, seg *Seg, ssectorId int, linedefId int, 
 	scene.meshes[ssectorId] = meshes
 }
 
-type bspAction func(level *Level, idx int)
+type bspFilter func(level *Level, nodeId int) bool
 
-func traverseBsp(level *Level, point *Point, idx int, action bspAction) {
+type bspAction func(level *Level, subsectorId int)
+
+func traverseBsp(level *Level, point *Point, idx int, filter bspFilter, action bspAction) {
 	if idx&subsectorBit == subsectorBit {
 		if idx == -1 {
 			action(level, 0)
@@ -251,10 +253,12 @@ func traverseBsp(level *Level, point *Point, idx int, action bspAction) {
 	node := level.Nodes[idx]
 	side := pointOnSide(point, &node)
 	sideIdx := int(node.Child[side])
-	traverseBsp(level, point, sideIdx, action)
+	traverseBsp(level, point, sideIdx, filter, action)
 	oppositeSide := side ^ 1
 	oppositeSideIdx := int(node.Child[oppositeSide])
-	traverseBsp(level, point, oppositeSideIdx, action)
+	if filter(level, oppositeSideIdx) {
+		traverseBsp(level, point, oppositeSideIdx, filter, action)
+	}
 }
 
 func pointOnSide(point *Point, node *Node) int {
@@ -399,10 +403,13 @@ func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 
 	fmt.Printf("Generating scene ...\n")
 	scene := NewScene()
-	var action bspAction = func(level *Level, idx int) {
+	var all bspFilter = func(level *Level, nodeId int) bool {
+		return true
+	}
+	var gen bspAction = func(level *Level, idx int) {
 		genSubsector(wad, level, idx, &scene)
 	}
-	traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, action)
+	traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, all, gen)
 
 	vertex_shader, err := compileShader(vertex, gl.VERTEX_SHADER)
 	if err != nil {
@@ -468,7 +475,7 @@ func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 				gl.DrawArrays(gl.TRIANGLES, 0, int32(mesh.count))
 			}
 		}
-		traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, render)
+		traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, all, render)
 
 		window.SwapBuffers()
 		glfw.PollEvents()
