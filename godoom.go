@@ -205,19 +205,21 @@ func renderLinedef(level *Level, seg *Seg, idx int, scene *Scene) {
 	}
 }
 
-func traverseBsp(level *Level, point *Point, idx int, scene *Scene) {
+type bspAction func(level *Level, idx int)
+
+func traverseBsp(level *Level, point *Point, idx int, action bspAction) {
 	if idx&subsectorBit == subsectorBit {
 		if idx == -1 {
-			renderSubsector(level, 0, scene)
+			action(level, 0)
 			return
 		} else {
-			renderSubsector(level, int(uint16(idx) & ^uint16(subsectorBit)), scene)
+			action(level, int(uint16(idx) & ^uint16(subsectorBit)))
 			return
 		}
 	}
 	node := level.Nodes[idx]
-	traverseBsp(level, point, int(node.Child[0]), scene)
-	traverseBsp(level, point, int(node.Child[1]), scene)
+	traverseBsp(level, point, int(node.Child[0]), action)
+	traverseBsp(level, point, int(node.Child[1]), action)
 }
 
 func intersects(point *Point, bbox *BBox) bool {
@@ -347,8 +349,10 @@ func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 	angle := startAngle
 
 	scene := Scene{}
-
-	traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, &scene)
+	var action bspAction = func(level *Level, idx int) {
+		renderSubsector(level, idx, &scene)
+	}
+	traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, action)
 
 	textures := map[string]uint32{}
 
