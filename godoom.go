@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/codegangsta/cli"
+	"github.com/fogleman/delaunay"
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/go-gl/mathgl/mgl32"
@@ -77,14 +78,47 @@ type Mesh struct {
 }
 
 type Scene struct {
+	floors   map[int]Mesh   // Floor meshes indexed by sector ID.
 	meshes   map[int][]Mesh // Meshes indexed by subsector ID.
 	textures map[string]uint32
+	flats    map[string]uint32
+}
+
+type SceneBuilder struct {
+	floorVertices map[int]map[int][]Vertex // Flat vertices indexed by sector and subsector ID
+	floorTextures map[int]string
+}
+
+func NewSceneBuilder() SceneBuilder {
+	return SceneBuilder{
+		floorVertices: make(map[int]map[int][]Vertex), // Floor vertices indeed by sector ID
+		floorTextures: make(map[int]string),
+	}
+}
+
+func (sb *SceneBuilder) AddFloorTexture(sectorId int, name string) {
+	sb.floorTextures[sectorId] = name
+}
+
+func (sb *SceneBuilder) AddFloorVertex(sectorId int, ssectorId int, vertex Vertex) {
+	inner, ok := sb.floorVertices[sectorId]
+	if !ok {
+		inner = make(map[int][]Vertex)
+		sb.floorVertices[sectorId] = inner
+	}
+	inner[ssectorId] = append(inner[ssectorId], vertex)
+}
+
+func (sb *SceneBuilder) Build() Scene {
+	return NewScene()
 }
 
 func NewScene() Scene {
 	return Scene{
+		floors:   make(map[int]Mesh),
 		meshes:   make(map[int][]Mesh),
 		textures: make(map[string]uint32),
+		flats:    make(map[string]uint32),
 	}
 }
 
@@ -98,6 +132,19 @@ func (scene *Scene) CacheTexture(wad *WAD, name string) error {
 		return err
 	}
 	scene.textures[name] = texture
+	return nil
+}
+
+func (scene *Scene) CacheFlat(wad *WAD, name string) error {
+	_, loaded := scene.flats[name]
+	if loaded {
+		return nil
+	}
+	texture, err := loadFlat(wad, name)
+	if err != nil {
+		return err
+	}
+	scene.flats[name] = texture
 	return nil
 }
 
@@ -127,16 +174,16 @@ func NewMesh(texture string, lightLevel int16, vertices []Point3) Mesh {
 	return Mesh{vao: vao, vbo: vbo, texture: texture, count: len(vbo_data), lightLevel: float32(lightLevel) / 255.0}
 }
 
-func genSubsector(wad *WAD, level *Level, ssectorId int, scene *Scene) {
+func genSubsector(wad *WAD, level *Level, ssectorId int, scene *Scene, sb *SceneBuilder) {
 	ssector := level.SSectors[ssectorId]
 	for seg := ssector.StartSeg; seg < ssector.StartSeg+ssector.Numsegs; seg++ {
-		genSeg(wad, level, ssectorId, int(seg), scene)
+		genSeg(wad, level, ssectorId, int(seg), scene, sb)
 	}
 }
 
-func genSeg(wad *WAD, level *Level, ssectorId int, segId int, scene *Scene) {
+func genSeg(wad *WAD, level *Level, ssectorId int, segId int, scene *Scene, sb *SceneBuilder) {
 	seg := level.Segs[segId]
-	genLinedef(wad, level, &seg, ssectorId, int(seg.LineNum), scene)
+	genLinedef(wad, level, &seg, ssectorId, int(seg.LineNum), scene, sb)
 }
 
 func segSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
@@ -161,7 +208,7 @@ func segOppositeSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
 	}
 }
 
-func genLinedef(wad *WAD, level *Level, seg *Seg, ssectorId int, linedefId int, scene *Scene) {
+func genLinedef(wad *WAD, level *Level, seg *Seg, ssectorId int, linedefId int, scene *Scene, sb *SceneBuilder) {
 	meshes := scene.meshes[ssectorId]
 
 	linedef := level.Linedefs[linedefId]
@@ -171,15 +218,22 @@ func genLinedef(wad *WAD, level *Level, seg *Seg, ssectorId int, linedefId int, 
 		return
 	}
 	sector := level.Sectors[sidedef.SectorRef]
-
 	oppositeSidedef := segOppositeSidedef(level, seg, &linedef)
 
 	start := level.Vertexes[linedef.VertexStart]
 	end := level.Vertexes[linedef.VertexEnd]
 
+	floorTexture := ToString(sector.Floorpic)
 	upperTexture := ToString(sidedef.UpperTexture)
 	middleTexture := ToString(sidedef.MiddleTexture)
 	lowerTexture := ToString(sidedef.LowerTexture)
+
+	if floorTexture != "-" {
+		sb.AddFloorTexture(int(sidedef.SectorRef), floorTexture)
+		sb.AddFloorVertex(int(sidedef.SectorRef), int(ssectorId), start)
+		sb.AddFloorVertex(int(sidedef.SectorRef), int(ssectorId), end)
+		scene.CacheFlat(wad, floorTexture)
+	}
 
 	if upperTexture != "-" && oppositeSidedef != nil {
 		oppositeSector := level.Sectors[oppositeSidedef.SectorRef]
@@ -402,15 +456,53 @@ func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 	angle := startAngle
 
 	fmt.Printf("Generating scene ...\n")
+	sb := NewSceneBuilder()
 	scene := NewScene()
 	var all bspFilter = func(level *Level, nodeId int) bool {
 		return true
 	}
 	var gen bspAction = func(level *Level, idx int) {
-		genSubsector(wad, level, idx, &scene)
+		genSubsector(wad, level, idx, &scene, &sb)
 	}
 	traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, all, gen)
 
+	for sectorId, sector := range level.Sectors {
+		texture := sb.floorTextures[sectorId]
+		inner := sb.floorVertices[sectorId]
+		for ssectorId, outer := range inner {
+			points := []delaunay.Point{}
+			for _, vertex := range outer {
+				points = append(points, delaunay.Point{X: float64(vertex.XCoord), Y: float64(vertex.YCoord)})
+			}
+			if len(points) < 3 {
+				continue
+			}
+			triangulation, err := delaunay.Triangulate(points)
+			if err != nil {
+				fmt.Println(err)
+				continue
+				//panic(err)
+			}
+			vertices := []Point3{}
+			ts := triangulation.Triangles
+			if len(ts)%3 != 0 {
+				panic("triangulation error")
+			}
+			for i := 0; i < len(ts); i += 3 {
+				to_uv := func(x int16) float32 {
+					size := 128 // FIXME?
+					return float32((int(x) + math.MaxInt16)) / float32(size)
+				}
+				p0 := points[ts[i+0]]
+				vertices = append(vertices, Point3{X: -int16(p0.X), Y: sector.FloorHeight, Z: int16(p0.Y), U: to_uv(int16(p0.X)), V: to_uv(int16(p0.Y))})
+				p1 := points[ts[i+1]]
+				vertices = append(vertices, Point3{X: -int16(p1.X), Y: sector.FloorHeight, Z: int16(p1.Y), U: to_uv(int16(p1.X)), V: to_uv(int16(p1.Y))})
+				p2 := points[ts[i+2]]
+				vertices = append(vertices, Point3{X: -int16(p2.X), Y: sector.FloorHeight, Z: int16(p2.Y), U: to_uv(int16(p2.X)), V: to_uv(int16(p2.Y))})
+			}
+			scene.floors[ssectorId] = NewMesh(texture, sector.Lightlevel, vertices)
+		}
+	}
 	vertex_shader, err := compileShader(vertex, gl.VERTEX_SHADER)
 	if err != nil {
 		panic(err)
@@ -477,6 +569,13 @@ func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 		}
 		traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, all, render)
 
+		for _, mesh := range scene.floors {
+			gl.Uniform1f(lightLevelID, mesh.lightLevel)
+			gl.BindTexture(gl.TEXTURE_2D, scene.flats[mesh.texture])
+			gl.BindVertexArray(mesh.vao)
+			gl.DrawArrays(gl.TRIANGLES, 0, int32(mesh.count))
+		}
+
 		window.SwapBuffers()
 		glfw.PollEvents()
 
@@ -520,6 +619,50 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 	return shader, nil
 }
 
+func loadFlat(wad *WAD, flatname string) (uint32, error) {
+	flat, err := wad.LoadFlat(flatname)
+	if err != nil {
+		return 0, err
+	}
+	width := 64
+	height := 64
+	bounds := image.Rect(0, 0, int(width), int(height))
+	rgba := image.NewRGBA(bounds)
+	for y := 0; y < width; y++ {
+		for x := 0; x < height; x++ {
+			pixel := flat.Data[y*width+x]
+			var alpha uint8
+			if pixel == wad.TransparentPaletteIndex {
+				alpha = 0
+			} else {
+				alpha = 255
+			}
+			rgb := wad.Playpal.Palettes[0].Table[pixel]
+			rgba.Set(x, y, color.RGBA{rgb.Red, rgb.Green, rgb.Blue, alpha})
+
+		}
+	}
+	var texId uint32
+	gl.GenTextures(1, &texId)
+	gl.ActiveTexture(gl.TEXTURE0)
+	gl.BindTexture(gl.TEXTURE_2D, texId)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT)
+	gl.TexImage2D(
+		gl.TEXTURE_2D,
+		0,
+		gl.RGBA,
+		int32(rgba.Rect.Size().X),
+		int32(rgba.Rect.Size().Y),
+		0,
+		gl.RGBA,
+		gl.UNSIGNED_BYTE,
+		gl.Ptr(rgba.Pix))
+	return texId, nil
+}
+
 func loadTexture(wad *WAD, texname string) (uint32, error) {
 	texture, err := wad.LoadTexture(texname)
 	if err != nil {
@@ -560,8 +703,8 @@ func loadTexture(wad *WAD, texname string) (uint32, error) {
 	gl.BindTexture(gl.TEXTURE_2D, texId)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT)
 	gl.TexImage2D(
 		gl.TEXTURE_2D,
 		0,

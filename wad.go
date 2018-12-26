@@ -25,6 +25,7 @@ type WAD struct {
 	TransparentPaletteIndex byte
 	Playpal                 *Playpal
 	textures                map[string]Texture
+	flats                   map[string]Flat
 	levels                  map[string]int
 	lumps                   map[string]int
 	lumpInfos               []lumpInfo
@@ -75,6 +76,10 @@ type PictureHeader struct {
 	Height     int16
 	LeftOffset int16
 	TopOffset  int16
+}
+
+type Flat struct {
+	Data []byte
 }
 
 type Level struct {
@@ -232,6 +237,11 @@ func ReadWAD(filename string) (*WAD, error) {
 		return nil, err
 	}
 	wad.textures = textures
+	flats, err := wad.readFlatLumps()
+	if err != nil {
+		return nil, err
+	}
+	wad.flats = flats
 	return wad, nil
 }
 
@@ -401,6 +411,32 @@ func (w *WAD) readTextureLumps() (map[string]Texture, error) {
 	return textures, nil
 }
 
+func (w *WAD) readFlatLumps() (map[string]Flat, error) {
+	flats := make(map[string]Flat)
+	startLump, ok := w.lumps["F_START"]
+	if !ok {
+		return nil, fmt.Errorf("F_START not found")
+	}
+	endLump, ok := w.lumps["F_END"]
+	if !ok {
+		return nil, fmt.Errorf("F_END not found")
+	}
+	for i := startLump; i < endLump; i++ {
+		lumpInfo := w.lumpInfos[i]
+		fmt.Printf("Flat: %s\n", ToString(lumpInfo.Name))
+		if err := w.seek(int64(lumpInfo.Filepos)); err != nil {
+			return nil, err
+		}
+		size := 4096
+		data := make([]byte, size, size)
+		if err := binary.Read(w.file, binary.LittleEndian, data); err != nil {
+			return nil, err
+		}
+		flats[ToString(lumpInfo.Name)] = Flat{Data: data}
+	}
+	return flats, nil
+}
+
 func (w *WAD) seek(offset int64) error {
 	off, err := w.file.Seek(offset, os.SEEK_SET)
 	if err != nil {
@@ -420,6 +456,11 @@ func (w *WAD) LoadTexture(texname string) (*Texture, error) {
 func (w *WAD) LoadImage(pnameNumber int16) (*Image, error) {
 	image := w.patches[ToString(w.pnames[pnameNumber])]
 	return &image, nil
+}
+
+func (w *WAD) LoadFlat(flatname string) (*Flat, error) {
+	flat := w.flats[flatname]
+	return &flat, nil
 }
 
 // LevelNames returns an array of level names found in the WAD archive.
