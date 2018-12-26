@@ -249,8 +249,26 @@ func traverseBsp(level *Level, point *Point, idx int, action bspAction) {
 		}
 	}
 	node := level.Nodes[idx]
-	traverseBsp(level, point, int(node.Child[0]), action)
-	traverseBsp(level, point, int(node.Child[1]), action)
+	side := pointOnSide(point, &node)
+	sideIdx := int(node.Child[side])
+	traverseBsp(level, point, sideIdx, action)
+	oppositeSide := side ^ 1
+	oppositeSideIdx := int(node.Child[oppositeSide])
+	traverseBsp(level, point, oppositeSideIdx, action)
+}
+
+func pointOnSide(point *Point, node *Node) int {
+	dx := int(point.X) - int(node.X)
+	dy := int(point.Y) - int(node.Y)
+	// Perp dot product:
+	left := int(node.DY>>16) * dx
+	right := int(node.DX>>16) * dy
+	if right < left {
+		// Point is on front side:
+		return 0
+	}
+	// Point is on the back side:
+	return 1
 }
 
 func intersects(point *Point, bbox *BBox) bool {
