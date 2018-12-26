@@ -68,7 +68,7 @@ type Point struct {
 	Y int16
 }
 
-type VertexArray struct {
+type Mesh struct {
 	texture    string
 	vao        uint32
 	vbo        uint32
@@ -77,12 +77,13 @@ type VertexArray struct {
 }
 
 type Scene struct {
-	vertexArrays []VertexArray
-	textures     map[string]uint32
+	meshes   map[int][]Mesh // Meshes indexed by subsector ID.
+	textures map[string]uint32
 }
 
 func NewScene() Scene {
 	return Scene{
+		meshes:   make(map[int][]Mesh),
 		textures: make(map[string]uint32),
 	}
 }
@@ -100,7 +101,7 @@ func (scene *Scene) CacheTexture(wad *WAD, name string) error {
 	return nil
 }
 
-func NewVertexArray(texture string, lightLevel int16, vertices []Point3) VertexArray {
+func NewMesh(texture string, lightLevel int16, vertices []Point3) Mesh {
 	var vao uint32
 	gl.GenVertexArrays(1, &vao)
 	gl.BindVertexArray(vao)
@@ -123,19 +124,19 @@ func NewVertexArray(texture string, lightLevel int16, vertices []Point3) VertexA
 	gl.VertexAttribPointer(texCoordAttrib, 2, gl.FLOAT, false, 5*4, gl.PtrOffset(3*4))
 	gl.EnableVertexAttribArray(texCoordAttrib)
 
-	return VertexArray{vao: vao, vbo: vbo, texture: texture, count: len(vbo_data), lightLevel: float32(lightLevel) / 255.0}
+	return Mesh{vao: vao, vbo: vbo, texture: texture, count: len(vbo_data), lightLevel: float32(lightLevel) / 255.0}
 }
 
-func genSubsector(wad *WAD, level *Level, idx int, scene *Scene) {
-	ssector := level.SSectors[idx]
+func genSubsector(wad *WAD, level *Level, ssectorId int, scene *Scene) {
+	ssector := level.SSectors[ssectorId]
 	for seg := ssector.StartSeg; seg < ssector.StartSeg+ssector.Numsegs; seg++ {
-		genSeg(wad, level, int(seg), scene)
+		genSeg(wad, level, ssectorId, int(seg), scene)
 	}
 }
 
-func genSeg(wad *WAD, level *Level, idx int, scene *Scene) {
-	seg := level.Segs[idx]
-	genLinedef(wad, level, &seg, int(seg.LineNum), scene)
+func genSeg(wad *WAD, level *Level, ssectorId int, segId int, scene *Scene) {
+	seg := level.Segs[segId]
+	genLinedef(wad, level, &seg, ssectorId, int(seg.LineNum), scene)
 }
 
 func segSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
@@ -160,8 +161,10 @@ func segOppositeSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
 	}
 }
 
-func genLinedef(wad *WAD, level *Level, seg *Seg, idx int, scene *Scene) {
-	linedef := level.Linedefs[idx]
+func genLinedef(wad *WAD, level *Level, seg *Seg, ssectorId int, linedefId int, scene *Scene) {
+	meshes := scene.meshes[ssectorId]
+
+	linedef := level.Linedefs[linedefId]
 
 	sidedef := segSidedef(level, seg, &linedef)
 	if sidedef == nil {
@@ -191,7 +194,7 @@ func genLinedef(wad *WAD, level *Level, seg *Seg, idx int, scene *Scene) {
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.CeilingHeight, Z: end.YCoord, U: 1.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.CeilingHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 
-		scene.vertexArrays = append(scene.vertexArrays, NewVertexArray(upperTexture, sector.Lightlevel, vertices))
+		meshes = append(meshes, NewMesh(upperTexture, sector.Lightlevel, vertices))
 
 		scene.CacheTexture(wad, upperTexture)
 	}
@@ -207,7 +210,7 @@ func genLinedef(wad *WAD, level *Level, seg *Seg, idx int, scene *Scene) {
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord, U: 1.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 
-		scene.vertexArrays = append(scene.vertexArrays, NewVertexArray(middleTexture, sector.Lightlevel, vertices))
+		meshes = append(meshes, NewMesh(middleTexture, sector.Lightlevel, vertices))
 
 		scene.CacheTexture(wad, middleTexture)
 	}
@@ -225,10 +228,12 @@ func genLinedef(wad *WAD, level *Level, seg *Seg, idx int, scene *Scene) {
 		vertices = append(vertices, Point3{X: -end.XCoord, Y: sector.FloorHeight, Z: end.YCoord, U: 1.0, V: 1.0})
 		vertices = append(vertices, Point3{X: -start.XCoord, Y: sector.FloorHeight, Z: start.YCoord, U: 0.0, V: 1.0})
 
-		scene.vertexArrays = append(scene.vertexArrays, NewVertexArray(lowerTexture, sector.Lightlevel, vertices))
+		meshes = append(meshes, NewMesh(lowerTexture, sector.Lightlevel, vertices))
 
 		scene.CacheTexture(wad, lowerTexture)
 	}
+
+	scene.meshes[ssectorId] = meshes
 }
 
 type bspAction func(level *Level, idx int)
@@ -437,12 +442,15 @@ func game(wad *WAD, level *Level, startPos *Point, startAngle int16) {
 
 		gl.ActiveTexture(gl.TEXTURE0)
 
-		for _, vertexArray := range scene.vertexArrays {
-			gl.Uniform1f(lightLevelID, vertexArray.lightLevel)
-			gl.BindTexture(gl.TEXTURE_2D, scene.textures[vertexArray.texture])
-			gl.BindVertexArray(vertexArray.vao)
-			gl.DrawArrays(gl.TRIANGLES, 0, int32(vertexArray.count))
+		var render bspAction = func(level *Level, idx int) {
+			for _, mesh := range scene.meshes[idx] {
+				gl.Uniform1f(lightLevelID, mesh.lightLevel)
+				gl.BindTexture(gl.TEXTURE_2D, scene.textures[mesh.texture])
+				gl.BindVertexArray(mesh.vao)
+				gl.DrawArrays(gl.TRIANGLES, 0, int32(mesh.count))
+			}
 		}
+		traverseBsp(level, &Point{int16(position.X()), int16(position.Y())}, len(level.Nodes)-1, render)
 
 		window.SwapBuffers()
 		glfw.PollEvents()
