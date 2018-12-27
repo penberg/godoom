@@ -46,3 +46,4 @@ GoDoom is distributed under the 2-clause BSD license.
 ## References
 
 * [The Unofficial Doom Spec](http://www.gamers.org/dhs/helpdocs/dmsp1666.html)
+* [Doom Wiki](http://doomwiki.org/)
