@@ -136,46 +136,23 @@ func genSubsector(wad *WAD, level *Level, ssectorId int, scene *Scene) {
 
 func genSeg(wad *WAD, level *Level, ssectorId int, segId int, scene *Scene) {
 	seg := level.Segs[segId]
-	genLinedef(wad, level, &seg, ssectorId, int(seg.LineNum), scene)
-}
 
-func segSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
-	if seg.Segside == 0 {
-		return &level.Sidedefs[linedef.SidedefRight]
-	} else {
-		if linedef.SidedefLeft == -1 {
-			return nil
-		}
-		return &level.Sidedefs[linedef.SidedefLeft]
-	}
-}
+	linedefId := int(seg.LineNum)
 
-func segOppositeSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
-	if seg.Segside == 0 {
-		if linedef.SidedefLeft == -1 {
-			return nil
-		}
-		return &level.Sidedefs[linedef.SidedefLeft]
-	} else {
-		return &level.Sidedefs[linedef.SidedefRight]
-	}
-}
-
-func genLinedef(wad *WAD, level *Level, seg *Seg, ssectorId int, linedefId int, scene *Scene) {
 	meshes := scene.meshes[ssectorId]
 
 	linedef := level.Linedefs[linedefId]
 
-	sidedef := segSidedef(level, seg, &linedef)
+	sidedef := segSidedef(level, &seg, &linedef)
 	if sidedef == nil {
 		return
 	}
 	sector := level.Sectors[sidedef.SectorRef]
 
-	oppositeSidedef := segOppositeSidedef(level, seg, &linedef)
+	oppositeSidedef := segOppositeSidedef(level, &seg, &linedef)
 
-	start := level.Vertexes[linedef.VertexStart]
-	end := level.Vertexes[linedef.VertexEnd]
+	start := level.Vertexes[seg.VertexStart]
+	end := level.Vertexes[seg.VertexEnd]
 
 	upperTexture := ToString(sidedef.UpperTexture)
 	middleTexture := ToString(sidedef.MiddleTexture)
@@ -234,6 +211,28 @@ func genLinedef(wad *WAD, level *Level, seg *Seg, ssectorId int, linedefId int, 
 	}
 
 	scene.meshes[ssectorId] = meshes
+}
+
+func segSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
+	if seg.Segside == 0 {
+		return &level.Sidedefs[linedef.SidedefRight]
+	} else {
+		if linedef.SidedefLeft == -1 {
+			return nil
+		}
+		return &level.Sidedefs[linedef.SidedefLeft]
+	}
+}
+
+func segOppositeSidedef(level *Level, seg *Seg, linedef *Linedef) *Sidedef {
+	if seg.Segside == 0 {
+		if linedef.SidedefLeft == -1 {
+			return nil
+		}
+		return &level.Sidedefs[linedef.SidedefLeft]
+	} else {
+		return &level.Sidedefs[linedef.SidedefRight]
+	}
 }
 
 type bspFilter func(level *Level, nodeId int) bool
