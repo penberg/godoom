@@ -15,9 +15,8 @@ Prerequisites:
 OS X:
 
 ``` sh
-brew tap homebrew/versions
-brew install --build-bottle --static glfw3
-go get github.com/go-gl/glfw3
+brew install glfw
+go get github.com/go-gl/glfw
 brew install glew
 go get github.com/go-gl/gl
 ```
